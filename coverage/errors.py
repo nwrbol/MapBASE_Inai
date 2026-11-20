@@ -11,3 +11,7 @@ class DataValidationError(CoverageError):
 
 class ConfigError(CoverageError):
     """Некорректный config.yaml или переопределение параметров."""
+
+
+class ScenarioError(DataValidationError):
+    """Некорректные ограничения сценария (неизвестная площадка, конфликт отказа и фиксации и т. п.)."""
