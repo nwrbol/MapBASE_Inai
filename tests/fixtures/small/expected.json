@@ -1,0 +1,22 @@
+{
+  "worst_cells": [
+    {
+      "cell_id": "X000_Y000",
+      "rsrp_median": -112.0
+    },
+    {
+      "cell_id": "X003_Y000",
+      "rsrp_median": -106.0
+    },
+    {
+      "cell_id": "X001_Y000",
+      "rsrp_median": -100.0
+    }
+  ],
+  "best_candidates": [
+    "C2",
+    "C3"
+  ],
+  "dropped_rows": 6,
+  "covered_weak_cells": 2
+}

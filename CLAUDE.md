@@ -156,10 +156,12 @@ coverage-map/
 ### 3.3 Геометрия (`geo.py`)
 ```python
 R = 6_371_000.0  # м
+
+
 def haversine_m(lat1, lon1, lat2, lon2) -> float | np.ndarray:  # векторизовано через numpy
     p1, p2 = np.radians(lat1), np.radians(lat2)
     dphi, dl = p2 - p1, np.radians(lon2 - lon1)
-    a = np.sin(dphi/2)**2 + np.cos(p1)*np.cos(p2)*np.sin(dl/2)**2
+    a = np.sin(dphi / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(dl / 2) ** 2
     return 2 * R * np.arcsin(np.sqrt(a))
 ```
 **Проекция для сетки:** локальная равнопромежуточная (equirectangular) от начала координат `origin = (lat0, lon0)`, юго-западного угла границ района:

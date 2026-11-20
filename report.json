@@ -419,7 +419,7 @@
         "X018_Y011"
       ],
       "depth_db": 519.1,
-      "elapsed_ms": 0.7,
+      "elapsed_ms": 0.599,
       "pairs_evaluated": 120,
       "ties": [
         [
@@ -547,7 +547,7 @@
         "X015_Y010"
       ],
       "depth_db": 619.15,
-      "elapsed_ms": 0.076,
+      "elapsed_ms": 0.062,
       "pairs_evaluated": 31,
       "ties": [],
       "steps": [
@@ -794,11 +794,11 @@
     }
   },
   "timings_ms": {
-    "read": 10.863,
-    "cleaning": 38.431,
-    "grid": 9.468,
-    "selection": 2.69,
-    "daynight": 12.131,
-    "total": 78.365
+    "read": 11.942,
+    "cleaning": 38.792,
+    "grid": 9.583,
+    "selection": 2.508,
+    "daynight": 12.294,
+    "total": 79.706
   }
 }
