@@ -479,11 +479,8 @@
 
   function fillPanel(d) {
     const r = d.result;
-    $("#k-pair").textContent = r.best_candidates.join(" + ") || "—";
-    $("#k-covered").textContent = r.covered_weak_cells;
+    // пара и покрытие («Итог», сводка шторки) рисует renderOverview(): там учитывается выбор пользователя
     $("#k-dropped").textContent = r.dropped_rows;
-    $("#ss-pair").textContent = r.best_candidates.join(" + ") || "—";
-    $("#ss-cov").textContent = `${r.covered_weak_cells} красных`;
     $("#ss-drop").textContent = `dropped ${r.dropped_rows}`;
 
     const cl = d.cleaning;
@@ -552,6 +549,7 @@
     resetScenarioForDataset(d);
     buildLayers(d, opts);
     fillPanel(d);
+    renderOverview();
     afterDatasetRendered();
     renderFieldBlock(d);
     if (opts.highlight && d.meta.field_included) highlightDiff(d);
@@ -577,6 +575,8 @@
     $("#dl-result").addEventListener("click", () => {
       if (current) download("result.json", JSON.stringify(current.result, null, 2) + "\n", "application/json");
     });
+    $("#dl-selected").addEventListener("click", downloadSelected);
+    $("#k-reset").addEventListener("click", resetToTz);
     $("#dl-map").addEventListener("click", () => {
       if (SERVER) {
         window.location.href = "/api/download/map.html" + (analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : "");
@@ -670,6 +670,7 @@
   const refusalOf = (id) => scenario.excluded.find((r) => r.id === id);
   const statusOf = (id) => (refusalOf(id) ? "excluded" : scenario.required.includes(id) ? "required" : "available");
   const constraintsPayload = () => ({ excluded: scenario.excluded.map((r) => ({ ...r })), required: [...scenario.required] });
+  const statePayload = () => ({ ...constraintsPayload(), selected: scenario.selected ? [...scenario.selected] : [] });
   const hasConstraints = () => scenario.excluded.length > 0 || scenario.required.length > 0;
 
   function cacheFor(d) {
@@ -723,7 +724,23 @@
       }
       required.push(id);
     });
-    return { constraints: { excluded, required }, dropped };
+    // выбранная пара: обе площадки известны и допустимы по ТЗ, не в отказе, включает все зафиксированные
+    let selected = null;
+    let selectedNote = "";
+    const rawSel = Array.isArray(raw.selected) ? raw.selected.map(String) : [];
+    if (rawSel.length) {
+      const ok =
+        rawSel.length === 2 &&
+        rawSel[0] !== rawSel[1] &&
+        rawSel.every((id) => {
+          const c = known.get(id);
+          return c && c.admissible && !excluded.some((x) => x.id === id);
+        }) &&
+        required.every((id) => rawSel.includes(id));
+      if (ok) selected = [...rawSel].sort();
+      else selectedNote = `Выбранная пара ${rawSel.join(" + ")} отброшена: она не подходит к данным или текущим ограничениям.`;
+    }
+    return { constraints: { excluded, required }, dropped, selected, selectedNote };
   }
 
   function hashFromState() {
@@ -732,12 +749,13 @@
       parts.push("ex=" + scenario.excluded.map((r) => [r.id, r.category, r.reason ? encodeURIComponent(r.reason) : ""].join(":").replace(/:$/, "")).join(","));
     }
     if (scenario.required.length) parts.push("req=" + scenario.required.join(","));
+    if (scenario.selected) parts.push("sel=" + scenario.selected.join(","));
     if (activeKeys && !CL.isDefaultSet(activeKeys)) parts.push("layers=" + CL.serializeLayersParam(activeKeys));
     return parts.join("&");
   }
 
   function parseHash(hash) {
-    const out = { excluded: [], required: [] };
+    const out = { excluded: [], required: [], selected: [] };
     String(hash || "")
       .replace(/^#/, "")
       .split("&")
@@ -759,6 +777,8 @@
           });
         } else if (key === "req") {
           out.required = val.split(",").filter(Boolean);
+        } else if (key === "sel") {
+          out.selected = val.split(",").filter(Boolean);
         }
       });
     return out;
@@ -772,7 +792,7 @@
       /* data:/file: — хеш недоступен, не критично */
     }
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(constraintsPayload()));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(statePayload()));
     } catch (e) {
       /* приватный режим и т. п. */
     }
@@ -780,7 +800,7 @@
 
   function loadStored() {
     const fromHash = parseHash(location.hash);
-    if (fromHash.excluded.length || fromHash.required.length) return fromHash;
+    if (fromHash.excluded.length || fromHash.required.length || fromHash.selected.length) return fromHash;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) return JSON.parse(raw);
@@ -794,11 +814,11 @@
 
   function resetScenarioForDataset(d) {
     /* Вызывается из render(): при новом наборе сбрасываем ограничения с неизвестными id и сообщаем об этом. */
-    const source = firstDataset ? loadStored() : constraintsPayload();
-    const { constraints, dropped } = sanitize(source, d);
+    const source = firstDataset ? loadStored() : statePayload();
+    const { constraints, dropped, selected, selectedNote } = sanitize(source, d);
     scenario.excluded = constraints.excluded;
     scenario.required = constraints.required;
-    scenario.selected = null;
+    scenario.selected = selected; // выбор переживает обновление данных (например, полевых замеров), если он ещё допустим
     scenario.preview = null;
     scenario.result = null;
     scenario.manualPick = [];
@@ -806,9 +826,12 @@
     impact = null;
     scCache = null;
     firstDataset = false;
-    pendingNote = dropped.length
-      ? `Сброшены ограничения с неизвестными или недопустимыми площадками: ${dropped.join(", ")}.`
-      : "";
+    pendingNote = [
+      dropped.length ? `Сброшены ограничения с неизвестными или недопустимыми площадками: ${dropped.join(", ")}.` : "",
+      selectedNote,
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
 
   let pendingNote = "";
@@ -890,6 +913,7 @@
     if (sel && (sel.some((id) => refusalOf(id)) || !scenario.required.every((id) => sel.includes(id)))) scenario.selected = null;
     persist();
     renderScenarioLayers();
+    renderOverview();
     scheduleScenario(false);
   }
 
@@ -1052,6 +1076,7 @@
 
     renderScenarioLayers();
     updateCandidateHighlights();
+    renderOverview();
   }
 
   function bindScenarioPanel() {
@@ -1061,6 +1086,7 @@
       if (sel) {
         scenario.selected = sel.dataset.pair.split(",");
         scenario.preview = null;
+        persist(); // sel= в хеше и localStorage
         renderScenario();
         return;
       }
@@ -1071,16 +1097,7 @@
         renderScenario();
       }
     });
-    $("#sc-reset").addEventListener("click", () => {
-      scenario.excluded = [];
-      scenario.required = [];
-      scenario.selected = null;
-      scenario.manualResult = null;
-      renderManualCard();
-      renderCandidatesTable();
-      constraintsChanged();
-      setStatusText("Ограничения сброшены.");
-    });
+    $("#sc-reset").addEventListener("click", resetToTz);
     $("#sc-download").addEventListener("click", downloadScenario);
     $("#sc-upload").addEventListener("change", uploadScenario);
     $("#manual-toggle").addEventListener("change", (ev) => setManual(ev.target.checked));
@@ -1103,22 +1120,98 @@
       if (!current) return;
       const layersInHash = CL.layersFromHash(location.hash);
       if (location.hash.replace(/^#/, "") !== hashFromState()) {
-        const { constraints, dropped } = sanitize(parseHash(location.hash), current);
-        applyConstraints(constraints, dropped);
+        const { constraints, dropped, selected, selectedNote } = sanitize(parseHash(location.hash), current);
+        applyConstraints(constraints, dropped, selected, selectedNote);
       }
       if (layersInHash && activeKeys && !CL.sameSet(layersInHash, activeKeys)) setActive(layersInHash);
     });
   }
 
-  function applyConstraints(constraints, dropped) {
-    scenario.excluded = constraints.excluded;
-    scenario.required = constraints.required;
+  // ---- «Обзор»: текущий план (выбор пользователя, ограничения или пара по ТЗ) -----------------------------------
+
+  const planNow = () =>
+    SC.currentPlan({ selected: scenario.selected, result: scenario.result, excluded: scenario.excluded, required: scenario.required }, current);
+
+  function renderOverview() {
+    /* Единственное место, где рисуются «Итог» и сводка шторки. Предпросмотр (displayPair) сюда не попадает. */
+    if (!current || !$("#k-pair")) return;
+    const plan = planNow();
+    const notTz = plan.source !== "tz";
+    const differs = SC.planDiffersFromTz(plan);
+
+    $("#k-pair").textContent = plan.pair ? pairText(plan.pair) : "—";
+    const src = $("#k-source");
+    src.textContent = plan.pending ? "считаю…" : plan.label;
+    src.className = "kpi-b" + (plan.source === "selected" ? " sel" : plan.source === "constraints" ? " cons" : "");
+    $("#k-covered").textContent = plan.covered === null || plan.covered === undefined ? "—" : plan.covered;
+    $("#k-delta").innerHTML = notTz && plan.pair ? deltaHtml(plan.delta, plan.tzCovered) : "";
+
+    const msg = $("#k-message");
+    let text = "";
+    if (!plan.pair && !plan.pending) text = `Сценарий невыполним: ${String(plan.message || "").replace(/^сценарий невыполним:\s*/i, "")}`;
+    else if (plan.violates) text = "Выбранная пара нарушает текущие ограничения (отказ или фиксация).";
+    msg.textContent = text;
+    msg.classList.toggle("hidden", !text);
+
+    // пара по ТЗ: показываем, только если текущий план от неё отличается
+    const showTz = differs || (notTz && !plan.pair && !plan.pending);
+    $("#k-tz").classList.toggle("hidden", !showTz);
+    $("#k-tz-pair").textContent = pairText(plan.tzPair);
+    $("#k-tz-covered").textContent = String(plan.tzCovered);
+    $("#k-reset").classList.toggle("hidden", !notTz);
+    $("#dl-selected").disabled = !(notTz && plan.pair);
+
+    // сводка нижней шторки (aria-live уже стоит на #sheet-summary)
+    $("#ss-pair").textContent = plan.pair ? pairText(plan.pair) : "—";
+    $("#sheet-summary").classList.toggle("plan-custom", notTz && !!plan.pair); // на узком экране: без «dropped», чтобы влезла кнопка
+    const cov = $("#ss-cov");
+    cov.textContent = plan.covered === null || plan.covered === undefined ? "" : `${plan.covered} красных${notTz ? ` · Δ ${signed(plan.delta)}` : ""}`;
+    if (notTz && plan.pair) {
+      const tag = document.createElement("span");
+      tag.className = "sel-tag";
+      tag.textContent = " · выбор";
+      cov.append(tag);
+    }
+  }
+
+  function downloadSelected() {
+    /* result_selected.json: тот же формат, что result.json, но с парой пользователя. Официальный результат не меняется. */
+    const plan = planNow();
+    if (!plan.pair) return;
+    if (SERVER) {
+      window.location.href = `/api/download/result_selected.json?pair=${encodeURIComponent(plan.pair.join(","))}` + (analysisId ? `&analysis_id=${encodeURIComponent(analysisId)}` : "");
+      return;
+    }
+    try {
+      download("result_selected.json", JSON.stringify(SC.buildSelectedResult(current, plan.pair), null, 2) + "\n", "application/json");
+    } catch (e) {
+      scenarioError(e.message);
+    }
+  }
+
+  function resetToTz() {
+    /* Сброс ограничений, выбора, ручного режима и предпросмотра: «Итог» снова показывает пару по ТЗ. */
+    scenario.excluded = [];
+    scenario.required = [];
     scenario.selected = null;
     scenario.manualResult = null;
     renderManualCard();
     renderCandidatesTable();
     constraintsChanged();
-    setStatusText(dropped && dropped.length ? `Пропущены неизвестные или недопустимые площадки: ${dropped.join(", ")}.` : "");
+    setStatusText("Ограничения сброшены.");
+    renderOverview();
+  }
+
+  function applyConstraints(constraints, dropped, selected = null, selectedNote = "") {
+    scenario.excluded = constraints.excluded;
+    scenario.required = constraints.required;
+    scenario.selected = selected;
+    scenario.manualResult = null;
+    renderManualCard();
+    renderCandidatesTable();
+    constraintsChanged();
+    setStatusText([dropped && dropped.length ? `Пропущены неизвестные или недопустимые площадки: ${dropped.join(", ")}.` : "", selectedNote].filter(Boolean).join(" "));
+    renderOverview();
   }
 
   async function downloadScenario() {
@@ -1149,8 +1242,8 @@
         const obj = JSON.parse(text);
         const raw = obj && obj.constraints ? obj.constraints : obj;
         if (!raw || typeof raw !== "object" || (!("excluded" in raw) && !("required" in raw))) throw new Error("нет ключей excluded / required");
-        const { constraints, dropped } = sanitize(raw, current);
-        applyConstraints(constraints, dropped);
+        const { constraints, dropped, selected, selectedNote } = sanitize(raw, current);
+        applyConstraints(constraints, dropped, selected, selectedNote);
         if (!dropped.length) setStatusText(`Загружено: ${file.name}.`);
       } catch (e) {
         scenarioError(`Не удалось прочитать ${file.name}: ${e.message}`);

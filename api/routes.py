@@ -16,7 +16,7 @@ from coverage.errors import DataValidationError, ScenarioError
 from coverage.field_store import FieldStore
 from coverage.pipeline import Inputs, PipelineResult, run_pipeline
 from coverage.render import build_map_data, render_home, render_page
-from coverage.result import dumps, to_jsonable
+from coverage.result import build_selected_result, dumps, parse_pair, to_jsonable
 from coverage.scenario import Constraints, Refusal, evaluate_manual, impact_of_refusals, run_scenario
 
 from .ratelimit import RateLimiter
@@ -146,7 +146,17 @@ def health() -> Health:
 
 @router.get("/api/result", response_model=ResultModel)
 def get_result(request: Request) -> dict:
+    """Официальный результат по ТЗ (его проверяет автопроверка). Параметр pair не принимается и игнорируется."""
     return _default(request).pr.result
+
+
+@router.get("/api/result/selected", response_model=ResultModel, tags=["scenario"])
+def get_result_selected(request: Request, pair: str, analysis_id: str | None = None) -> dict:
+    """Результат для пары пользователя (?pair=C08,C11): тот же формат, что result.json.
+
+    Не используется автопроверкой; официальный результат — /api/result.
+    """
+    return build_selected_result(_pick(request, analysis_id).pr, parse_pair(pair))
 
 
 @router.get("/api/report")
@@ -267,11 +277,23 @@ async def analyze(
 
 @router.get("/api/download/result.json")
 def download_result(request: Request, analysis_id: str | None = None) -> Response:
+    """Официальный result.json по ТЗ вложением. Параметр pair не принимается и игнорируется."""
     a = _pick(request, analysis_id)
     return Response(
         dumps(a.pr.result),
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="result.json"'},
+    )
+
+
+@router.get("/api/download/result_selected.json", tags=["scenario"])
+def download_result_selected(request: Request, pair: str, analysis_id: str | None = None) -> Response:
+    """result_selected.json для пары пользователя вложением. Не используется автопроверкой; официальный результат — /api/result."""
+    data = build_selected_result(_pick(request, analysis_id).pr, parse_pair(pair))
+    return Response(
+        dumps(data),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="result_selected.json"'},
     )
 
 

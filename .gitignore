@@ -13,3 +13,7 @@ data/field.db
 data/field.db-wal
 data/field.db-shm
 *.db
+
+# пользовательские результаты: официальный остаётся result.json (по ТЗ)
+result_selected.json
+scenario.json

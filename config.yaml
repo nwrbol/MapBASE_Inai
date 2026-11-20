@@ -57,6 +57,7 @@ output:
   report_file: report.json
   map_file: map.html
   scenario_file: scenario.json   # пишется только если заданы ограничения (--exclude/--require/--constraints)
+  selected_file: result_selected.json   # пара пользователя (--pair); официальный result.json от неё не зависит
   coord_decimals: 6
   rsrp_decimals: 4
 

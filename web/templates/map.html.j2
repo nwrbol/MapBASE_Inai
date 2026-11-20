@@ -45,13 +45,19 @@
         <section class="card">
           <h2>Итог</h2>
           <div class="kpis">
-            <div class="kpi"><span class="kpi-v" id="k-pair">—</span><span class="kpi-l">лучшая пара</span></div>
-            <div class="kpi"><span class="kpi-v" id="k-covered">—</span><span class="kpi-l">красных клеток покрыто</span></div>
+            <div class="kpi"><span class="kpi-v" id="k-pair">—</span><span class="kpi-l" id="k-pair-label">текущая пара</span><span class="kpi-b" id="k-source"></span></div>
+            <div class="kpi"><span class="kpi-v" id="k-covered">—</span><span class="kpi-l">красных клеток покрыто<span id="k-delta"></span></span></div>
             <div class="kpi"><span class="kpi-v" id="k-dropped">—</span><span class="kpi-l">строк отброшено</span></div>
           </div>
+          <p id="k-message" class="sc-message hidden" role="status"></p>
+          <p id="k-tz" class="small hidden">По ТЗ (в result.json для жюри): <b id="k-tz-pair">—</b> · <span id="k-tz-covered"></span></p>
           <div class="btn-row">
-            <button id="dl-result" class="btn">Скачать result.json</button>
-            <button id="dl-map" class="btn">Скачать map.html</button>
+            <button id="k-reset" class="btn hidden" type="button">Вернуть пару по ТЗ</button>
+          </div>
+          <div class="btn-row">
+            <button id="dl-result" class="btn" type="button" title="Официальный результат по ТЗ: его проверяет автопроверка жюри">Скачать result.json (по ТЗ)</button>
+            <button id="dl-selected" class="btn" type="button" disabled title="Тот же формат, что result.json, но с вашей парой. Автопроверка жюри использует result.json по ТЗ">Скачать мой выбор</button>
+            <button id="dl-map" class="btn" type="button">Скачать map.html</button>
           </div>
         </section>
 

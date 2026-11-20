@@ -211,5 +211,88 @@
     return { ...brief(o, true), violates_constraints: violates, delta_vs_best: ranked.length ? o.covered - ranked[0].covered : null };
   }
 
-  return { CATEGORIES, ScenarioError, validate, evaluatePair, enumeratePairs, impactOfRefusals, runScenario, evaluateManual, coversOf, optimumOf };
+  // ---- текущий план и результат по выбору пользователя ---------------------------------------------------------
+
+  const samePairArr = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
+
+  function planLabel(source, excluded, required) {
+    if (source === "tz") return "по ТЗ, оптимум";
+    if (source === "selected") return "ваш выбор";
+    const ex = (excluded || []).map((r) => r.id);
+    const req = required || [];
+    const detail = [ex.length ? `отказ: ${ex.join(", ")}` : "", req.length ? `фиксация: ${req.join(", ")}` : ""].filter(Boolean).join("; ");
+    return `${ex.length ? "с учётом отказов" : "с учётом фиксации"}${detail ? ` (${detail})` : ""}`;
+  }
+
+  /**
+   * Текущий план: какая пара сейчас «принята» пользователем. Предпросмотр планом не считается.
+   * state = {selected, result, excluded:[{id}], required:[id]}; data = данные карты.
+   * Возвращает {pair, covered, delta, source, label, violates, tzPair, tzCovered, message?, pending?}
+   *   source: "tz" | "constraints" | "selected". Δ считается к паре по ТЗ (при полевых замерах: к оптимуму карты).
+   */
+  function currentPlan(state, data) {
+    const excluded = state.excluded || [];
+    const required = state.required || [];
+    const tzPair = sortedArr(data.result.best_candidates);
+    const tzCovered = data.result.covered_weak_cells;
+    const field = !!(data.meta && data.meta.field_included);
+    const covers = coversOf(data);
+    const optimum = optimumOf(data, covers);
+    const base = field ? optimum.cells.size : tzCovered;
+    const common = { tzPair, tzCovered, violates: false };
+
+    if (state.selected && state.selected.length === 2) {
+      try {
+        const pair = sortedArr(state.selected);
+        const info = evaluatePair(covers, pair[0], pair[1], optimum.cells);
+        const exIds = new Set(excluded.map((r) => r.id));
+        const violates = pair.some((id) => exIds.has(id)) || !required.every((id) => pair.includes(id));
+        return { ...common, pair, covered: info.covered, delta: info.covered - base, source: "selected", label: planLabel("selected"), violates };
+      } catch (e) {
+        if (!(e instanceof ScenarioError)) throw e; // выбранной площадки в этих данных нет: выбор не считается
+      }
+    }
+    if (excluded.length || required.length) {
+      const label = planLabel("constraints", excluded, required);
+      const r = state.result;
+      if (!r) return { ...common, pair: null, covered: null, delta: null, source: "constraints", label, message: null, pending: true };
+      if (!r.feasible || !r.best) {
+        return { ...common, pair: null, covered: null, delta: null, source: "constraints", label, message: r.message || "сценарий невыполним" };
+      }
+      const pair = sortedArr(r.best.pair);
+      return { ...common, pair, covered: r.best.covered, delta: r.best.covered - base, source: "constraints", label };
+    }
+    return { ...common, pair: tzPair, covered: tzCovered, delta: 0, source: "tz", label: planLabel("tz") };
+  }
+
+  /** План отличается от пары по ТЗ (для строки «По ТЗ…» и кнопки «Скачать мой выбор»). */
+  const planDiffersFromTz = (plan) => plan.source !== "tz" && !!plan.pair && !samePairArr(plan.pair, plan.tzPair);
+
+  /** Тот же результат, что build_selected_result в Python: ровно 4 ключа, покрытие по исходным данным карты. */
+  function buildSelectedResult(data, pair) {
+    if (!Array.isArray(pair) || pair.length !== 2) throw new ScenarioError("нужны две разные площадки");
+    if (pair[0] === pair[1]) throw new ScenarioError("нужны две разные площадки");
+    const info = new Map(data.candidates.map((x) => [x.id, x]));
+    const excl = data.meta ? data.meta.tower_exclusion_m : undefined;
+    pair.forEach((id) => {
+      const c = info.get(id);
+      if (!c) throw new ScenarioError(`площадка ${id} неизвестна`);
+      if (!c.admissible) {
+        if (c.nearest_tower != null && c.nearest_tower_m != null && excl != null) {
+          throw new ScenarioError(`${id} недопустима по ТЗ: ${Math.round(c.nearest_tower_m)} м до ${c.nearest_tower} (< ${excl} м)`);
+        }
+        throw new ScenarioError(`${id} недопустима по ТЗ: ${c.reason}`);
+      }
+    });
+    const [a, b] = sortedArr(pair);
+    const covered = union(new Set(info.get(a).covers || []), new Set(info.get(b).covers || [])).size;
+    return {
+      worst_cells: data.result.worst_cells,
+      best_candidates: [a, b],
+      dropped_rows: data.result.dropped_rows,
+      covered_weak_cells: covered,
+    };
+  }
+
+  return { CATEGORIES, ScenarioError, validate, evaluatePair, enumeratePairs, impactOfRefusals, runScenario, evaluateManual, coversOf, optimumOf, currentPlan, planDiffersFromTz, planLabel, buildSelectedResult };
 });

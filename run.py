@@ -51,6 +51,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     sc.add_argument("--top-n", type=int, default=DEFAULT_TOP_N, help="сколько альтернативных пар сохранить (1..50)")
     p.add_argument(
+        "--pair",
+        metavar="A,B",
+        help="пара площадок пользователя: дополнительно пишет result_selected.json (формат result.json); "
+        "result.json остаётся по ТЗ",
+    )
+    p.add_argument(
         "--include-field",
         metavar="DB",
         help="дополнительно посчитать карту с полевыми замерами из SQLite (map_with_field.html, field_report.json); result.json не меняется",
@@ -133,6 +139,16 @@ def build_constraints(args: argparse.Namespace) -> Constraints:
         Refusal(r.id, reasons.get(r.id, r.reason), categories.get(r.id, r.category)) for r in merged.excluded
     )
     return Constraints(excluded=patched, required=merged.required)
+
+
+def selected_summary(pr: PipelineResult, selected: dict, filename: str) -> str:
+    """Строка итога для --pair (ASCII, как остальная сводка: консоль Windows может не знать «Δ»)."""
+    pair, covered = selected["best_candidates"], selected["covered_weak_cells"]
+    tz = pr.result
+    return (
+        f"Selected pair: {' + '.join(pair)} -> {covered} (TZ optimum {' + '.join(tz['best_candidates'])} -> "
+        f"{tz['covered_weak_cells']}, delta {covered - tz['covered_weak_cells']:+d}); written {filename}"
+    )
 
 
 def scenario_summary(s: ScenarioResult) -> str:
@@ -221,6 +237,15 @@ def main(argv: list[str] | None = None) -> int:
         constraints = build_constraints(args)
         # сценарий считаем до записи файлов: ошибка в ограничениях не оставляет частичный вывод
         scenario = None if constraints.is_empty else run_scenario(pr, constraints, args.top_n)
+        # пара пользователя: ошибка не мешает записать официальный result.json, но даёт код выхода 2
+        selected, pair_error = None, None
+        if args.pair:
+            try:
+                from coverage.result import build_selected_result, parse_pair
+
+                selected = build_selected_result(pr, parse_pair(args.pair))
+            except ScenarioError as exc:
+                pair_error = exc
 
         from coverage.result import write_json
 
@@ -233,6 +258,8 @@ def main(argv: list[str] | None = None) -> int:
             written.insert(1, str(write_map_html(pr, out / o.map_file)))
         if scenario is not None:
             written.append(str(write_json(out / o.scenario_file, scenario.to_dict())))
+        if selected is not None:
+            written.append(str(write_json(out / o.selected_file, selected)))
         field_lines: list[str] = []
         if args.include_field:
             field_lines, field_written = include_field(pr, Path(args.include_field), out, args.no_map)
@@ -240,8 +267,13 @@ def main(argv: list[str] | None = None) -> int:
         print(summary(pr, [Path(w).name if Path(w).parent == ROOT else w for w in written]))
         if scenario is not None:
             print(scenario_summary(scenario))
+        if selected is not None:
+            print(selected_summary(pr, selected, o.selected_file))
         if field_lines:
             print("\n".join(field_lines))
+        if pair_error is not None:
+            print(f"Ошибка входных данных: --pair: {pair_error}", file=sys.stderr)
+            return 2
     except (DataValidationError, ConfigError, ScenarioError) as exc:
         print(f"Ошибка входных данных: {exc}", file=sys.stderr)
         return 2

@@ -313,3 +313,17 @@ body.server { display: flex; flex-direction: column; height: 100vh; height: 100d
 @media (max-width: 760px) {
   .server #panel[data-sheet="full"] { height: calc(var(--workspace-height, 100dvh) - 12px); }
 }
+
+/* «Обзор»: текущий план (выбор, ограничения или ТЗ) */
+.kpi-b { align-self: flex-start; margin-top: 2px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--muted); }
+.kpi-b:empty { display: none; }
+.kpi-b.sel, .kpi-b.cons { color: var(--accent); border-color: var(--accent); font-weight: 650; }
+#k-delta { margin-left: 6px; }
+#k-tz { margin: 8px 0 0; color: var(--muted); }
+#k-tz b { color: var(--text); }
+#k-reset { margin-bottom: 4px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .sheet-summary .sel-tag { font-size: 10px; color: var(--accent); }
+  .sheet-summary.plan-custom #ss-drop { display: none; }
+}

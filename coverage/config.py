@@ -89,6 +89,7 @@ class OutputSettings:
     report_file: str = "report.json"
     map_file: str = "map.html"
     scenario_file: str = "scenario.json"
+    selected_file: str = "result_selected.json"
     coord_decimals: int = 6
     rsrp_decimals: int = 4
 
