@@ -83,3 +83,16 @@ def test_cli_help_has_no_internal_wording():
     )
     assert r.returncode == 0
     assert not FORBIDDEN.search(r.stdout), FORBIDDEN.search(r.stdout).group(0)
+
+
+def test_map_page_has_panel_resizer_and_single_width_source(client):
+    html = client.get("/map").text
+    assert 'id="panel-resizer"' in html and 'role="separator"' in html and 'tabindex="0"' in html
+    assert html.index('id="panel"') < html.index('id="panel-resizer"') < html.index('id="map"')
+    css = (ROOT / "web" / "static" / "style.css").read_text(encoding="utf-8")
+    assert (
+        "--panel-w" in css
+        and "width: 380px; min-width: 380px" not in css
+        and "width: 440px; min-width: 440px" not in css
+    )
+    assert "margin-left: -344px" not in css and "margin-left: -404px" not in css

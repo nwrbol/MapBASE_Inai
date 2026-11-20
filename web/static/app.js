@@ -585,7 +585,7 @@
     });
     $("#panel-toggle").addEventListener("click", () => {
       $("#panel").classList.toggle("collapsed");
-      setTimeout(() => map.invalidateSize(), 250);
+      setTimeout(scheduleInvalidate, 250);
     });
   }
 
@@ -1678,10 +1678,106 @@
     }));
   }
 
+  // ---- изменяемая ширина панели (ПК) --------------------------------------------------------------------
+
+  const PANEL_W = { min: 320, def: 440, maxAbs: 960, maxFrac: 0.6, step: 16, bigStep: 64, key: "panelWidth" };
+
+  const panelMax = () => Math.max(PANEL_W.min, Math.min(PANEL_W.maxAbs, Math.round(window.innerWidth * PANEL_W.maxFrac)));
+  const clampW = (w) => Math.min(panelMax(), Math.max(PANEL_W.min, Math.round(w)));
+  const panelWidthNow = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-w"), 10) || PANEL_W.def;
+
+  let invalidateRaf = 0;
+  function scheduleInvalidate() {
+    /* не чаще одного раза за кадр */
+    if (invalidateRaf) return;
+    invalidateRaf = requestAnimationFrame(() => {
+      invalidateRaf = 0;
+      if (map) map.invalidateSize({ pan: false });
+    });
+  }
+
+  function setPanelWidth(w, { save = true } = {}) {
+    const v = clampW(w);
+    document.documentElement.style.setProperty("--panel-w", v + "px");
+    const sep = $("#panel-resizer");
+    if (sep) {
+      sep.setAttribute("aria-valuenow", String(v));
+      sep.setAttribute("aria-valuemax", String(panelMax()));
+    }
+    if (save) {
+      try {
+        localStorage.setItem(PANEL_W.key, String(v));
+      } catch (e) {
+        /* приватный режим */
+      }
+    }
+    scheduleInvalidate();
+    return v;
+  }
+
+  function bindPanelResizer() {
+    const sep = $("#panel-resizer");
+    if (!sep) return;
+    let saved = PANEL_W.def;
+    try {
+      saved = Number(localStorage.getItem(PANEL_W.key)) || PANEL_W.def;
+    } catch (e) {
+      /* нет доступа к storage */
+    }
+    setPanelWidth(saved, { save: false });
+
+    let startX = 0;
+    let startW = 0;
+    let dragging = false;
+    sep.addEventListener("pointerdown", (e) => {
+      if (MQ_MOBILE.matches || e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX;
+      startW = $("#panel").getBoundingClientRect().width;
+      sep.setPointerCapture(e.pointerId); // события остаются на разделителе: карта не панорамируется
+      sep.classList.add("active");
+      document.body.classList.add("resizing");
+      e.preventDefault();
+    });
+    sep.addEventListener("pointermove", (e) => {
+      if (dragging) setPanelWidth(startW + (e.clientX - startX), { save: false });
+    });
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try {
+        sep.releasePointerCapture(e.pointerId);
+      } catch (_) {
+        /* захват уже снят */
+      }
+      sep.classList.remove("active");
+      document.body.classList.remove("resizing");
+      setPanelWidth($("#panel").getBoundingClientRect().width); // сохранить итог
+      if (map) map.invalidateSize();
+    };
+    sep.addEventListener("pointerup", end);
+    sep.addEventListener("pointercancel", end);
+    sep.addEventListener("dblclick", () => setPanelWidth(PANEL_W.def));
+    sep.addEventListener("keydown", (e) => {
+      const cur = $("#panel").getBoundingClientRect().width;
+      const step = e.shiftKey ? PANEL_W.bigStep : PANEL_W.step;
+      const targets = { ArrowLeft: cur - step, ArrowRight: cur + step, Home: PANEL_W.min, End: panelMax(), Enter: PANEL_W.def };
+      if (!(e.key in targets)) return;
+      e.preventDefault();
+      setPanelWidth(targets[e.key]);
+    });
+    window.addEventListener("resize", () => {
+      if (MQ_MOBILE.matches) return;
+      const cur = panelWidthNow();
+      if (cur > panelMax()) setPanelWidth(cur, { save: false }); // подрезка окном: выбранная ширина в storage не затирается
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     initMap();
     bindButtons();
     bindPanelNavigation();
+    bindPanelResizer();
     bindUpload();
     bindCandidatesTable();
     bindScenarioPanel();

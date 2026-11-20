@@ -15,12 +15,14 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body { font: 14px/1.45 var(--font); color: var(--text); background: var(--bg); }
+:root { --panel-w: 440px; --panel-peek: 36px; } /* --panel-peek: что остаётся видно у свёрнутой панели */
 #app { display: flex; height: 100vh; }
 #panel {
-  width: 380px; min-width: 380px; background: var(--panel); border-right: 1px solid var(--line);
+  width: var(--panel-w); min-width: 0; flex: 0 0 var(--panel-w); background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; transition: margin-left .2s ease; z-index: 1000;
+  container-type: inline-size; container-name: panel;
 }
-#panel.collapsed { margin-left: -344px; }
+#panel.collapsed { margin-left: calc(-1 * var(--panel-w) + var(--panel-peek)); }
 #panel.collapsed .panel-body, #panel.collapsed .panel-head h1, #panel.collapsed .sub { visibility: hidden; }
 .panel-head { position: relative; padding: 14px 44px 10px 16px; border-bottom: 1px solid var(--line); }
 .panel-head h1 { font-size: 18px; margin: 0; }
@@ -110,15 +112,13 @@ details summary { cursor: pointer; font-size: 12.5px; margin: 4px 0; }
 
 @media (max-width: 760px) {
   #app { flex-direction: column-reverse; }
-  #panel { width: 100%; min-width: 0; height: 45vh; border-right: none; border-top: 1px solid var(--line); }
+  #panel { width: 100%; min-width: 0; flex: none; height: 45vh; border-right: none; border-top: 1px solid var(--line); }
   #panel.collapsed { margin-left: 0; height: 52px; }
   #map { height: 55vh; flex: 1; }
   .kpis { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* Сценарии отказов */
-#panel { width: 440px; min-width: 440px; }
-#panel.collapsed { margin-left: -404px; }
 .card h3 { font-size: 13px; margin: 12px 0 6px; }
 .sc-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sc-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
@@ -183,7 +183,7 @@ tr.refusal-row td { padding: 2px 6px 8px; border-bottom: 1px solid var(--line); 
 .star-icon .lock { position: absolute; font-size: 12px; right: -4px; bottom: -4px; line-height: 12px; text-shadow: none; }
 
 @media (max-width: 760px) {
-  #panel { width: 100%; min-width: 0; }
+  #panel { width: 100%; min-width: 0; flex: none; }
   .sc-cards { grid-template-columns: 1fr; }
 }
 
@@ -314,7 +314,7 @@ body.server { display: flex; flex-direction: column; height: 100vh; height: 100d
   .server #panel[data-sheet="full"] { height: calc(var(--workspace-height, 100dvh) - 12px); }
 }
 
-/* «Обзор»: текущий план (выбор, ограничения или ТЗ) */
+/* «Обзор»: текущий план (выбор, ограничения или оптимум) */
 .kpi-b { align-self: flex-start; margin-top: 2px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--muted); }
 .kpi-b:empty { display: none; }
 .kpi-b.sel, .kpi-b.cons { color: var(--accent); border-color: var(--accent); font-weight: 650; }
@@ -326,4 +326,27 @@ body.server { display: flex; flex-direction: column; height: 100vh; height: 100d
 @media (max-width: 760px) {
   .sheet-summary .sel-tag { font-size: 10px; color: var(--accent); }
   .sheet-summary.plan-custom #ss-drop { display: none; }
+}
+
+/* Изменяемая ширина панели (только на ПК) */
+.panel-resizer { flex: 0 0 6px; cursor: col-resize; position: relative; z-index: 1001; background: transparent; touch-action: none; user-select: none; }
+.panel-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: var(--line); transition: background .15s; }
+.panel-resizer:hover::after, .panel-resizer.active::after, .panel-resizer:focus-visible::after { background: var(--accent); }
+.panel-resizer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+body.resizing #panel { transition: none; }
+#panel.collapsed + .panel-resizer { display: none; }
+#panel .card { overflow-x: auto; } /* таблицы на узкой панели прокручиваются, а не ломают вёрстку */
+@container panel (min-width: 620px) {
+  .kpis { grid-template-columns: repeat(3, 1fr); }
+  .kpi:first-child { grid-column: auto; }
+  .sc-cards { grid-template-columns: 1fr 1fr; }
+  .params { grid-template-columns: repeat(4, 1fr); }
+}
+@container panel (max-width: 380px) {
+  .sc-cards { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+  .panel-resizer { display: none; }
 }
