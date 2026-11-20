@@ -19,6 +19,7 @@ from coverage.render import build_map_data, render_page
 from coverage.result import dumps, to_jsonable
 from coverage.scenario import Constraints, Refusal, evaluate_manual, impact_of_refusals, run_scenario
 
+from .ratelimit import RateLimiter
 from .schemas import (
     AnalyzeResponse,
     CandidateModel,
@@ -64,6 +65,8 @@ class AppState:
     field_store: FieldStore | None = None
     field_lock: Lock = field(default_factory=Lock)
     field_cache: OrderedDict = field(default_factory=OrderedDict)
+    limiter: RateLimiter = field(default_factory=RateLimiter)
+    field_recomputes: int = 0  # сколько раз пересчитывали «исходные + полевые» (для тестов кэша)
     admin_token: str | None = None  # env ADMIN_TOKEN: сброс общей базы; не задан -> сброс отключён
 
     def store(self, analysis: Analysis) -> str:
@@ -80,11 +83,14 @@ def create_state(
     config_path: Path | None,
     field_db_path: str | Path | None = None,
     admin_token: str | None = None,
+    rate_limit_per_min: int | None = None,
 ) -> AppState:
     settings = load_settings(config_path)
     state = AppState(data_dir=data_dir, config_path=config_path, settings=settings)
     state.field_store = FieldStore(field_db_path)
     state.admin_token = admin_token or None
+    if rate_limit_per_min is not None:
+        state.limiter = RateLimiter(rate_limit_per_min)
     pr = run_pipeline(Inputs.from_dir(data_dir, settings.bounds.bounds_file), settings)
     state.default = Analysis(pr=pr, map_data=build_map_data(pr))
     return state
@@ -144,16 +150,24 @@ def get_report(request: Request) -> JSONResponse:
 
 
 @router.get("/api/mapdata")
-def get_mapdata(request: Request, include_field: bool = False) -> JSONResponse:
+def get_mapdata(request: Request, include_field: bool = False) -> Response:
     """Все данные карты одним JSON (тот же формат, что встроен в map.html).
 
     include_field=true добавляет полевые замеры в сетку (result остаётся официальным, по исходным данным).
     """
+    # ETag = "{датасет}-{версия полевых}-{include_field}": при опросе без изменений отвечаем 304 без тела.
+    version = _state(request).field_store.version() if include_field else 0
+    etag = f'"default-{version}-{str(include_field).lower()}"'
+    if etag in {t.strip().removeprefix("W/") for t in request.headers.get("if-none-match", "").split(",")}:
+        return Response(status_code=304, headers={"ETag": etag})
     if include_field:
         from .field_routes import field_map_data
 
-        return JSONResponse(field_map_data(request))
-    return JSONResponse(_default(request).map_data)
+        data = field_map_data(request)
+        etag = f'"default-{data["meta"]["field_version"]}-true"'  # версия самих данных, а не момент запроса
+    else:
+        data = _default(request).map_data
+    return JSONResponse(data, headers={"ETag": etag})
 
 
 @router.get("/api/grid")

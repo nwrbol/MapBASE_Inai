@@ -43,6 +43,7 @@ log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 MAX_CACHED_VIEWS = 4
+DATASET_ID = "default"  # полевые замеры относятся к району по умолчанию; загруженные датасеты их не получают
 PASTE_HEADER = list(FIELD_COLS)
 
 router = APIRouter(prefix="/api/field", tags=["field"])
@@ -103,9 +104,12 @@ def _view(st: AppState) -> FieldView:
     """Пересчёт с полевыми замерами, кэш по версии хранилища. Вызывать под st.field_lock."""
     store = st.field_store
     version = store.version()
-    cached = st.field_cache.get(version)
+    key = (DATASET_ID, version, True)
+    cached = st.field_cache.get(key)
     if cached is not None:
+        st.field_cache.move_to_end(key)
         return cached
+    st.field_recomputes += 1
     base = st.default.pr
     df = store.as_dataframe()
     if df.empty:
@@ -113,7 +117,7 @@ def _view(st: AppState) -> FieldView:
     else:
         pr = run_pipeline_with_field(base, df)
         view = FieldView(version, df, pr, field_diff(base, pr))
-    st.field_cache[version] = view
+    st.field_cache[key] = view
     while len(st.field_cache) > MAX_CACHED_VIEWS:
         st.field_cache.popitem(last=False)
     return view
@@ -171,6 +175,8 @@ def _commit(
     a = _default(request)
     store = _store(request)
     skip = {r.index for r in (parse_rejected or [])}
+    if not dry_run:
+        st.limiter.check(device_id, request.client.host if request.client else "-")
     with st.field_lock:
         ex = existing_frame(a.pr.clean, store.as_dataframe())
         accepted, rejected = validate_field_rows(rows, a.pr.settings, ex)
@@ -499,6 +505,7 @@ async def import_commit(
     a_ = _default(request)
     opts = _options(options)
     data = await _read_import(file, st)
+    st.limiter.check(device, request.client.host if request.client else "-")
 
     def work() -> dict:
         with st.field_lock:

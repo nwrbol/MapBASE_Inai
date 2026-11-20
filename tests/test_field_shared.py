@@ -233,3 +233,133 @@ def test_result_json_unchanged_by_field_data(a, b, cell):
     a.get("/api/mapdata", params={"include_field": "true"})
     assert a.get("/api/result").json() == EXPECTED
     assert a.get("/api/mapdata").json()["cleaning"]["dropped"] == EXPECTED["dropped_rows"]
+
+
+# 5. кэш пересчёта --------------------------------------------------------------------------------------------
+
+
+def test_mapdata_cache_follows_version(app, a, cell):
+    st = app.state.coverage
+    before = a.get("/api/mapdata", params={"include_field": "true"}).json()
+    n0 = next(c for c in before["cells"] if c["id"] == cell["id"])["n"]
+    add(a, cell)
+    after = a.get("/api/mapdata", params={"include_field": "true"}).json()
+    assert after["meta"]["field_version"] == before["meta"]["field_version"] + 1
+    assert [p["id"] for p in before["field_points"]] == [] and len(after["field_points"]) == 1
+    assert next(c for c in after["cells"] if c["id"] == cell["id"])["n"] == n0 + 1
+    # без изменений повторный запрос не запускает пересчёт и отдаёт тот же объект из кэша
+    runs = st.field_recomputes
+    for _ in range(3):
+        assert a.get("/api/mapdata", params={"include_field": "true"}).json() == after
+    assert st.field_recomputes == runs
+    view = list(st.field_cache.values())[-1]
+    assert view.map_data is not None and len(st.field_cache) <= 4
+    # новая версия делает прежнюю запись невалидной сама собой
+    add(a, cell, ts="2026-11-20T22:40:00+06:00")
+    a.get("/api/mapdata", params={"include_field": "true"})
+    assert st.field_recomputes > runs
+
+
+def test_concurrent_mapdata_requests_compute_once(app, a, cell):
+    st = app.state.coverage
+    # запись напрямую в хранилище: кэш этой версии ещё не построен (через POST его строит ответ «summary»)
+    st.field_store.add_many([item(cell)], DEV_A)
+    runs = st.field_recomputes
+    out = []
+
+    def get():
+        out.append(TestClient(app).get("/api/mapdata", params={"include_field": "true"}).status_code)
+
+    threads = [threading.Thread(target=get) for _ in range(10)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert out == [200] * 10 and st.field_recomputes == runs + 1
+
+
+# 6. заголовки ---------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/field/version",
+        "/api/field/measurements",
+        "/api/field/events",
+        "/api/field/config",
+        "/api/mapdata",
+        "/api/mapdata?include_field=true",
+    ],
+)
+def test_no_store_on_field_and_mapdata(a, path):
+    assert a.get(path).headers["cache-control"] == "no-store"
+
+
+def test_no_store_on_errors_and_writes(a, cell):
+    assert (
+        TestClient(a.app).post("/api/field/measurements", json={"items": [item(cell)]}).headers["cache-control"]
+        == "no-store"
+    )
+    assert a.post("/api/field/measurements", json={"items": [item(cell)]}).headers["cache-control"] == "no-store"
+    assert "cache-control" not in a.get("/health").headers or a.get("/health").headers["cache-control"] != "no-store"
+
+
+def test_etag_and_304(a, cell):
+    r = a.get("/api/mapdata", params={"include_field": "true"})
+    etag = r.headers["etag"]
+    assert etag.startswith('"default-') and etag.endswith('-true"')
+    same = a.get("/api/mapdata", params={"include_field": "true"}, headers={"If-None-Match": etag})
+    assert same.status_code == 304 and same.content == b"" and same.headers["cache-control"] == "no-store"
+    assert same.headers["etag"] == etag
+    add(a, cell)
+    fresh = a.get("/api/mapdata", params={"include_field": "true"}, headers={"If-None-Match": etag})
+    assert fresh.status_code == 200 and fresh.headers["etag"] != etag
+    # без полевых замеров ETag постоянный и не зависит от версии базы
+    base = a.get("/api/mapdata")
+    assert a.get("/api/mapdata", headers={"If-None-Match": base.headers["etag"]}).status_code == 304
+    # чужой ETag не даёт 304
+    assert a.get("/api/mapdata", headers={"If-None-Match": '"other"'}).status_code == 200
+
+
+# лимит частоты ----------------------------------------------------------------------------------------------------
+
+
+def test_rate_limit_per_device_gives_429(tmp_path, cell):
+    with TestClient(create_app(data_dir=OPEN_DATA, field_db_path=tmp_path / "r.db", rate_limit_per_min=3)) as c:
+        h = {"X-Device-Id": DEV_A}
+        codes = [
+            c.post(
+                "/api/field/measurements", json={"items": [item(cell, ts=f"2026-11-20T22:0{i}:00+06:00")]}, headers=h
+            ).status_code
+            for i in range(5)
+        ]
+        assert codes == [200, 200, 200, 429, 429]
+        r = c.post("/api/field/measurements", json={"items": [item(cell, ts="2026-11-20T22:09:00+06:00")]}, headers=h)
+        assert "Слишком много запросов" in r.json()["detail"] and int(r.headers["retry-after"]) >= 1
+        # другое устройство не страдает; dry_run и чтение не считаются
+        other = {"X-Device-Id": DEV_B}
+        assert (
+            c.post(
+                "/api/field/measurements", json={"items": [item(cell, ts="2026-11-20T21:00:00+06:00")]}, headers=other
+            ).status_code
+            == 200
+        )
+        assert (
+            c.post("/api/field/measurements", json={"items": [item(cell)], "dry_run": True}, headers=h).status_code
+            == 200
+        )
+        assert c.get("/api/field/version", headers=h).status_code == 200
+
+
+def test_rate_limiter_window_slides():
+    from api.ratelimit import RateLimiter, RateLimitExceeded
+
+    t = [0.0]
+    lim = RateLimiter(2, 60.0, clock=lambda: t[0])
+    lim.check("d", "1.1.1.1")
+    lim.check("d", "1.1.1.1")
+    with pytest.raises(RateLimitExceeded) as e:
+        lim.check("d", "1.1.1.1")
+    assert e.value.retry_after == 60
+    lim.check("d", "2.2.2.2")  # другой IP
+    t[0] = 61.0
+    lim.check("d", "1.1.1.1")  # окно сдвинулось
