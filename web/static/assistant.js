@@ -1,3 +1,76 @@
+// Форматируем только текст и известные конструкции. HTML и URL из ответа остаются текстом.
+function renderChatMarkdown(root, source, addReference) {
+  const reference = /\b(?:X\d{3}_Y\d{3}|C\d+)\b/g;
+  function element(parent, tag) {
+    const child = document.createElement(tag);
+    parent.append(child);
+    return child;
+  }
+  function plain(parent, value) {
+    let offset = 0;
+    for (const match of value.matchAll(reference)) {
+      parent.append(value.slice(offset, match.index));
+      addReference(parent, match[0]);
+      offset = match.index + match[0].length;
+    }
+    parent.append(value.slice(offset));
+  }
+  function inline(parent, value) {
+    const tokens = /(`)([^`\n]+)\1|(\*\*|__)(\S(?:.*?\S)?)\3|(\*)([^*\n]+)\5|(?<![\wА-Яа-я])_([^_\n]+)_(?![\wА-Яа-я])/gu;
+    let offset = 0;
+    for (const match of value.matchAll(tokens)) {
+      plain(parent, value.slice(offset, match.index));
+      const child = element(parent, match[1] ? "code" : match[3] ? "strong" : "em");
+      plain(child, match[2] ?? match[4] ?? match[6] ?? match[7]);
+      offset = match.index + match[0].length;
+    }
+    plain(parent, value.slice(offset));
+  }
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const columns = line => line.trim().replace(/^\||\|$/g, "").split("|").map(s => s.trim());
+  let paragraph = null, list = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const item = /^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/.exec(line);
+    if (item) {
+      const tag = item[1] ? "ul" : "ol";
+      if (list?.localName !== tag) {
+        list = element(root, tag);
+        if (tag === "ol") list.start = Number(item[2]);
+      }
+      inline(element(list, "li"), item[3]);
+      paragraph = null;
+      continue;
+    }
+    list = null;
+    if (!line.trim()) { paragraph = null; continue; }
+    if (/^\s*```/.test(line)) {
+      const content = [];
+      while (++i < lines.length && !/^\s*```\s*$/.test(lines[i])) content.push(lines[i]);
+      element(element(root, "pre"), "code").textContent = content.join("\n");
+    } else if (line.includes("|") && lines[i+1]?.includes("|") &&
+               columns(lines[i+1]).every(s => /^:?-{3,}:?$/.test(s))) {
+      const table = element(root, "table");
+      const row = (section, text, tag) => {
+        const tr = element(section, "tr");
+        columns(text).forEach(col => inline(element(tr, tag), col));
+      };
+      row(element(table, "thead"), line, "th");
+      const body = element(table, "tbody");
+      i++;
+      while (lines[i+1]?.includes("|")) row(body, lines[++i], "td");
+    } else if (/^#{1,6}\s/.test(line)) {
+      inline(element(root, "h3"), line.replace(/^#{1,6}\s+/, ""));
+    } else {
+      paragraph ??= element(root, "p");
+      if (paragraph.hasChildNodes()) element(paragraph, "br");
+      inline(paragraph, line);
+      continue;
+    }
+    paragraph = null;
+  }
+}
+
 /* Чат отправляет только сводку карты. Все изменения обратимы в этой вкладке. */
 document.addEventListener("DOMContentLoaded", async () => {
   const $ = id => document.getElementById(id);
@@ -26,10 +99,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const follow = log.scrollHeight-log.scrollTop-log.clientHeight < 40;
     const node = document.createElement("div"); node.className="chat-msg "+role;
     if (role === "assistant") {
-      text.split(/(\bX\d{3}_Y\d{3}\b|\bC\d+\b)/).forEach((part,i) => {
-        if (i%2) button(node,part,() => { try {app.flyToTarget(part);} catch(e) {bubble("error",e.message);} },"chat-ref");
-        else node.append(document.createTextNode(part));
-      });
+      renderChatMarkdown(node, text, (parent, id) => button(parent, id, () => {
+        try { app.flyToTarget(id); } catch (e) { bubble("error", e.message); }
+      }, "chat-ref"));
     } else node.textContent=text;
     log.append(node);
     if (follow) log.scrollTop=log.scrollHeight;

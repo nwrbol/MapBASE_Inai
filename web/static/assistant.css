@@ -14,3 +14,12 @@
 #chat-input { min-width:0; flex:1; font:16px/1.4 var(--font); max-height:8em; resize:vertical; border:1px solid var(--line); background:var(--bg); color:var(--text); border-radius:8px; padding:8px; }
 .chat-ref { font:inherit; color:var(--accent); background:transparent; border:0; padding:0; text-decoration:underline; cursor:pointer; }
 .chat-chip { display:block; font-size:12px; margin-top:4px; }
+.chat-msg.assistant { white-space:normal; min-width:0; overflow-x:auto; }
+.chat-msg.assistant :is(p,h3,ul,ol,pre,table) { margin:0 0 .55em; }
+.chat-msg.assistant > :last-child { margin-bottom:0; }
+.chat-msg.assistant h3 { font-size:1.05em; }
+.chat-msg.assistant :is(ul,ol) { padding-inline-start:1.5em; }
+.chat-msg.assistant code { font: .92em ui-monospace, monospace; background:var(--panel); padding:.1em .25em; border-radius:4px; }
+.chat-msg.assistant pre { overflow-x:auto; padding:8px; background:var(--panel); border-radius:6px; }
+.chat-msg.assistant pre code { padding:0; }
+.chat-msg.assistant :is(th,td) { padding:4px 6px; border:1px solid var(--line); text-align:start; }
