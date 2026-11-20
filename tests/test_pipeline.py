@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -7,6 +8,9 @@ from coverage.pipeline import Inputs, run_pipeline
 from coverage.render import render_map_html
 from coverage.result import RESULT_KEYS, dumps
 from tests.conftest import OPEN_DATA, ROOT, SMALL
+
+# Дочерний python пишет stdout/stderr в UTF-8 независимо от кодировки консоли (на Windows это cp1251).
+UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
 
 def test_small_fixture_end_to_end(settings):
@@ -57,7 +61,7 @@ def test_map_html_is_self_contained(settings):
 def test_cli_writes_outputs(tmp_path):
     proc = subprocess.run(
         [sys.executable, str(ROOT / "run.py"), "--data-dir", str(SMALL), "--out", str(tmp_path)],
-        capture_output=True, text=True, encoding="utf-8", check=False,
+        capture_output=True, text=True, encoding="utf-8", env=UTF8_ENV, check=False,
     )  # fmt: skip
     assert proc.returncode == 0, proc.stderr
     assert "dropped: 6" in proc.stdout
@@ -71,7 +75,7 @@ def test_cli_bad_input_exit_code_2(tmp_path):
     (tmp_path / "candidates.csv").write_text("id,lat,lon\n", encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, str(ROOT / "run.py"), "--data-dir", str(tmp_path), "--out", str(tmp_path)],
-        capture_output=True, text=True, encoding="utf-8", check=False,
+        capture_output=True, text=True, encoding="utf-8", env=UTF8_ENV, check=False,
     )  # fmt: skip
     assert proc.returncode == 2
     assert "нет обязательных столбцов" in proc.stderr
@@ -81,7 +85,7 @@ def test_cli_bad_input_exit_code_2(tmp_path):
 def test_cli_missing_file_exit_code_2(tmp_path):
     proc = subprocess.run(
         [sys.executable, str(ROOT / "run.py"), "--data-dir", str(tmp_path / "nope"), "--out", str(tmp_path)],
-        capture_output=True, text=True, encoding="utf-8", check=False,
+        capture_output=True, text=True, encoding="utf-8", env=UTF8_ENV, check=False,
     )  # fmt: skip
     assert proc.returncode == 2
     assert "не найден" in proc.stderr
