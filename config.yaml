@@ -1,0 +1,59 @@
+# Все спорные решения ТЗ 7 собраны здесь: меняются одной строкой без правки кода.
+# Источник правил: TASKS_ORIGINAL_RU.docx + CLARIFICATIONS_RU.md (раздел 7) из пакета участников.
+
+bounds:
+  # Если в каталоге данных лежит bounds.json, он имеет приоритет над этими значениями.
+  bounds_file: bounds.json
+  lat_min: 42.84
+  lat_max: 42.87597286423675
+  lon_min: 74.56
+  lon_max: 74.60905912302184
+  inclusive: true            # границы района включительно (CLARIFICATIONS §7)
+  polygon: null              # [[lat, lon], ...] — если задан, используется point-in-polygon вместо bbox
+
+grid:
+  origin_lat: 42.84          # юго-западный угол района (grid_origin_lat из bounds.json)
+  origin_lon: 74.56
+  cell_size_m: 200
+  earth_radius_m: 6371000
+  min_samples: 5             # клетки с n < 5 не учитываются
+  cell_id_format: "X{ix:03d}_Y{iy:03d}"
+
+cleaning:
+  rsrp_min: -140             # включительно допустимо
+  rsrp_max: -44              # включительно допустимо
+  require_valid_timestamp: true   # CLARIFICATIONS §7: timestamp обязан быть ISO 8601
+  accept_unix_epoch: false        # unix epoch не является ISO 8601
+  dedup_subset: [lat, lon, rsrp_dbm, timestamp]
+  dedup_timestamp_mode: instant   # instant: одно и то же время в разной записи = дубль; string: сравнение строк
+
+classes:
+  green_min: -90             # median >= -90 -> green
+  red_below: -105            # median < -105 -> red; -105 ровно -> yellow
+
+worst:
+  count: 3
+  format: objects            # objects: [{cell_id, rsrp_median}] | id: ["X006_Y013", ...] | latlon: [[lat, lon], ...]
+
+selection:
+  tower_exclusion_m: 500     # допустимо, если расстояние до КАЖДОЙ БС >= 500 м
+  coverage_radius_m: 1000    # покрыта, если расстояние до центра красной клетки <= 1000 м
+  coverage_reference: center
+  pair_size: 2
+  tie_break: lexicographic   # lexicographic | depth_then_lexicographic
+
+daynight:
+  timezone: Asia/Bishkek
+  day_start_hour: 8          # день = [08:00, 20:00) местного времени
+  day_end_hour: 20
+
+heatmap:
+  rsrp_strong: -44           # intensity = clip((rsrp_strong - rsrp) / span, 0, 1)
+  span_db: 96
+
+output:
+  result_file: result.json
+  report_file: report.json
+  map_file: map.html
+  coord_decimals: 6
+  rsrp_decimals: 4

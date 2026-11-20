@@ -1,0 +1,11 @@
+{
+  "lat_min": 42.84,
+  "lat_max": 42.87597286423675,
+  "lon_min": 74.56,
+  "lon_max": 74.60905912302184,
+  "grid_origin_lat": 42.84,
+  "grid_origin_lon": 74.56,
+  "cell_size_m": 200,
+  "earth_radius_m": 6371000,
+  "timezone": "Asia/Bishkek"
+}
