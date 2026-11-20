@@ -12,20 +12,23 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from coverage import __version__
+from coverage.assistant.groq_client import GroqClient
+from coverage.env import load_env
 from coverage.errors import ConfigError, DataValidationError
 from coverage.field_import import ImportTooLarge
 from coverage.render import STATIC
 
+from .assistant_routes import router as assistant_router
 from .field_routes import page_router as field_page_router
 from .field_routes import router as field_router
-from .ratelimit import RateLimitExceeded
+from .ratelimit import RateLimitExceeded, RateLimiter
 from .routes import create_state, router
 
 ROOT = Path(__file__).resolve().parent.parent
 log = logging.getLogger(__name__)
 
 
-NO_STORE_PREFIXES = ("/api/field", "/api/mapdata")
+NO_STORE_PREFIXES = ("/api/field", "/api/mapdata", "/api/assistant")
 
 
 class NoStoreMiddleware:
@@ -66,7 +69,13 @@ def create_app(
         app.state.coverage = create_state(
             data, cfg, field_db_path, admin_token or os.environ.get("ADMIN_TOKEN"), rate_limit_per_min
         )
-        yield
+        load_env()
+        app.state.chat_limit = RateLimiter(15)
+        app.state.groq = GroqClient()
+        try:
+            yield
+        finally:
+            app.state.groq.http.close()
         if app.state.coverage.field_store is not None:
             app.state.coverage.field_store.close()
 
@@ -98,6 +107,7 @@ def create_app(
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    app.include_router(assistant_router)
     app.include_router(router)
     app.include_router(field_router)
     app.include_router(field_page_router)
