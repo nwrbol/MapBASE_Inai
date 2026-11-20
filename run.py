@@ -15,8 +15,9 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from coverage.config import ConfigError, load_settings  # noqa: E402
-from coverage.errors import DataValidationError  # noqa: E402
+from coverage.errors import DataValidationError, ScenarioError  # noqa: E402
 from coverage.pipeline import Inputs, PipelineResult, run_pipeline  # noqa: E402
+from coverage.scenario import DEFAULT_TOP_N, Constraints, Refusal, ScenarioResult, run_scenario  # noqa: E402
 
 log = logging.getLogger("coverage")
 
@@ -32,6 +33,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--bounds", help="путь к bounds.json (по умолчанию <data-dir>/bounds.json, если есть)")
     p.add_argument("--config", default=None, help="config.yaml (по умолчанию из корня репозитория)")
     p.add_argument("--out", default=str(ROOT), help="куда писать result.json, map.html, report.json")
+    sc = p.add_argument_group("сценарии отказов (result.json от них не зависит; пишется отдельный scenario.json)")
+    sc.add_argument(
+        "--exclude", action="append", default=[], metavar="ID", help="площадка отказала (можно несколько раз)"
+    )
+    sc.add_argument("--exclude-reason", action="append", default=[], metavar="ID=ТЕКСТ", help="причина отказа")
+    sc.add_argument(
+        "--exclude-category",
+        action="append",
+        default=[],
+        metavar="ID=КАТЕГОРИЯ",
+        help="owner | permit | technical | other",
+    )
+    sc.add_argument("--require", action="append", default=[], metavar="ID", help="площадка зафиксирована (до двух)")
+    sc.add_argument(
+        "--constraints", metavar="FILE", help='JSON {"excluded": [{"id","reason","category"}], "required": [..]}'
+    )
+    sc.add_argument("--top-n", type=int, default=DEFAULT_TOP_N, help="сколько альтернативных пар сохранить (1..50)")
     p.add_argument("--no-map", action="store_true", help="не генерировать map.html")
     p.add_argument("--serve", action="store_true", help="после расчёта запустить веб-интерфейс FastAPI")
     p.add_argument("--host", default="127.0.0.1")
@@ -81,6 +99,61 @@ def summary(pr: PipelineResult, written: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _kv(items: list[str], flag: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip():
+            raise ScenarioError(f"{flag}: ожидается формат ID=значение, получено {item!r}")
+        out[key.strip()] = value.strip()
+    return out
+
+
+def build_constraints(args: argparse.Namespace) -> Constraints:
+    """Ограничения из --constraints FILE и флагов (флаги дополняют файл и главнее него)."""
+    base = Constraints.from_file(args.constraints) if args.constraints else Constraints()
+    reasons = _kv(args.exclude_reason, "--exclude-reason")
+    categories = _kv(args.exclude_category, "--exclude-category")
+    ids = list(dict.fromkeys(args.exclude))
+    stray = (set(reasons) | set(categories)) - set(ids) - base.excluded_ids
+    if stray:
+        raise ScenarioError(f"причина/категория указана для площадки без --exclude: {', '.join(sorted(stray))}")
+    flags = Constraints(
+        excluded=tuple(Refusal(i, reasons.get(i, ""), categories.get(i, "other")) for i in ids),
+        required=tuple(args.require),
+    )
+    merged = base.merged(flags)
+    # причина/категория из флагов применяются и к отказам из файла
+    patched = tuple(
+        Refusal(r.id, reasons.get(r.id, r.reason), categories.get(r.id, r.category)) for r in merged.excluded
+    )
+    return Constraints(excluded=patched, required=merged.required)
+
+
+def scenario_summary(s: ScenarioResult) -> str:
+    c = s.constraints
+    parts = []
+    if c.excluded:
+        parts.append("excluded " + ", ".join(f"{r.id} ({r.reason})" if r.reason else r.id for r in c.excluded))
+    if c.required:
+        parts.append("required " + ", ".join(c.required))
+    lines = ["Scenario: " + "; ".join(parts)]
+    if not s.feasible or s.best is None:
+        lines.append(f"  Infeasible: {s.message}")
+        return "\n".join(lines)
+    b, o = s.best, s.optimum
+    lines.append(
+        f"  Best: {' + '.join(b.pair)} -> {b.covered} (optimum {' + '.join(o.pair)} -> {o.covered}, "
+        f"delta {b.delta_vs_optimum:+d})"
+    )
+    other_ties = [" + ".join(t.pair) for t in s.ties if t.pair != b.pair]
+    nxt = next((a for a in s.alternatives if a.covered < b.covered), None)
+    ties = ", ".join(other_ties) if other_ties else "none"
+    nxt_txt = f"{' + '.join(nxt.pair)} -> {nxt.covered}" if nxt else "-"
+    lines.append(f"  Ties: {ties} | Next: {nxt_txt}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(
@@ -91,6 +164,9 @@ def main(argv: list[str] | None = None) -> int:
         settings = load_settings(args.config)
         inputs = build_inputs(args, settings.bounds.bounds_file)
         pr = run_pipeline(inputs, settings)
+        constraints = build_constraints(args)
+        # сценарий считаем до записи файлов: ошибка в ограничениях не оставляет частичный вывод
+        scenario = None if constraints.is_empty else run_scenario(pr, constraints, args.top_n)
 
         from coverage.result import write_json
 
@@ -101,8 +177,12 @@ def main(argv: list[str] | None = None) -> int:
             from coverage.render import write_map_html
 
             written.insert(1, str(write_map_html(pr, out / o.map_file)))
+        if scenario is not None:
+            written.append(str(write_json(out / o.scenario_file, scenario.to_dict())))
         print(summary(pr, [Path(w).name if Path(w).parent == ROOT else w for w in written]))
-    except (DataValidationError, ConfigError) as exc:
+        if scenario is not None:
+            print(scenario_summary(scenario))
+    except (DataValidationError, ConfigError, ScenarioError) as exc:
         print(f"Ошибка входных данных: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:

@@ -216,3 +216,47 @@ def test_constraints_from_dict_and_file(tmp_path):
     f.write_text("[1]", encoding="utf-8")
     with pytest.raises(ScenarioError):
         Constraints.from_file(f)
+
+
+# CLI
+def _run_cli(*extra, out):
+    import os
+    import subprocess
+    import sys
+
+    return subprocess.run(
+        [sys.executable, str(ROOT / "run.py"), "--data-dir", str(OPEN_DATA), "--out", str(out), *extra],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        check=False,
+    )
+
+
+def test_cli_scenario_writes_scenario_json_and_keeps_result(tmp_path):
+    base, scen = tmp_path / "base", tmp_path / "scen"
+    assert _run_cli(out=base).returncode == 0
+    assert not (base / "scenario.json").exists()
+    proc = _run_cli("--exclude", "C09", "--exclude-reason", "C09=собственник против", "--require", "C14", out=scen)
+    assert proc.returncode == 0, proc.stderr
+    assert "Best: C08 + C14 -> 108" in proc.stdout and "Next: C06 + C14 -> 101" in proc.stdout
+    assert (scen / "result.json").read_bytes() == (base / "result.json").read_bytes()
+    data = json.loads((scen / "scenario.json").read_text(encoding="utf-8"))
+    assert (
+        data["best"]["pair"] == ["C08", "C14"] and data["constraints"]["excluded"][0]["reason"] == "собственник против"
+    )
+
+
+def test_cli_constraints_file(tmp_path):
+    f = tmp_path / "constraints.json"
+    f.write_text(json.dumps({"excluded": [{"id": "C09", "category": "owner"}], "required": []}), encoding="utf-8")
+    proc = _run_cli("--constraints", str(f), out=tmp_path / "o")
+    assert proc.returncode == 0 and "Best: C08 + C11 -> 108" in proc.stdout
+
+
+@pytest.mark.parametrize("flags", [["--exclude", "C99"], ["--require", "C01"], ["--exclude-reason", "oops"]])
+def test_cli_bad_constraints_exit_code_2(tmp_path, flags):
+    proc = _run_cli(*flags, out=tmp_path / "o")
+    assert proc.returncode == 2 and "Traceback" not in proc.stderr
+    assert not (tmp_path / "o" / "result.json").exists()  # ошибка до записи файлов

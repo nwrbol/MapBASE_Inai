@@ -55,5 +55,6 @@ output:
   result_file: result.json
   report_file: report.json
   map_file: map.html
+  scenario_file: scenario.json   # пишется только если заданы ограничения (--exclude/--require/--constraints)
   coord_decimals: 6
   rsrp_decimals: 4
