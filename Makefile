@@ -1,6 +1,6 @@
 PY ?= python3
 
-.PHONY: install run serve test lint format selfcheck screenshot clean
+.PHONY: install run serve test lint format selfcheck samples screenshot clean
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -24,6 +24,9 @@ format:
 
 selfcheck:
 	$(PY) scripts/make_dirty_dataset.py
+
+samples:
+	$(PY) scripts/make_field_samples.py
 
 clean:
 	rm -rf selfcheck_out out .pytest_cache .ruff_cache

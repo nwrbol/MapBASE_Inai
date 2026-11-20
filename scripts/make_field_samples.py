@@ -80,14 +80,27 @@ def main() -> int:
 
     def add(tech: str, lat: float, lon: float, level: int) -> list[str]:
         nonlocal n
-        rec = [fmt_ts(n), f"{lon:.6f}", f"{lat:.6f}", f"{rng.uniform(0, 14):.1f}", tech, str(level), str(rng.randint(-14, -7)), str(25000 + rng.randint(0, 99))]
+        rec = [
+            fmt_ts(n),
+            f"{lon:.6f}",
+            f"{lat:.6f}",
+            f"{rng.uniform(0, 14):.1f}",
+            tech,
+            str(level),
+            str(rng.randint(-14, -7)),
+            str(25000 + rng.randint(0, 99)),
+        ]
         n += 1
         rows.append(rec)
         return rec
 
     b = settings.bounds
     umts_pts = [(b.lat_min + 0.005 + 0.004 * i, b.lon_min + 0.01 + 0.006 * i) for i in range(5)]
-    outside = [(b.lat_max + 0.02, b.lon_min + 0.02), (b.lat_min - 0.03, b.lon_max - 0.01), (b.lat_min + 0.01, b.lon_max + 0.05)]
+    outside = [
+        (b.lat_max + 0.02, b.lon_min + 0.02),
+        (b.lat_min - 0.03, b.lon_max - 0.01),
+        (b.lat_min + 0.01, b.lon_max + 0.05),
+    ]
     originals = []
     for i, (lat, lon) in enumerate(lte):
         originals.append(add("LTE", lat, lon, rng.randint(-125, -98)))

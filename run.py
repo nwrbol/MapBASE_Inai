@@ -50,6 +50,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--constraints", metavar="FILE", help='JSON {"excluded": [{"id","reason","category"}], "required": [..]}'
     )
     sc.add_argument("--top-n", type=int, default=DEFAULT_TOP_N, help="сколько альтернативных пар сохранить (1..50)")
+    p.add_argument(
+        "--include-field",
+        metavar="DB",
+        help="дополнительно посчитать карту с полевыми замерами из SQLite (map_with_field.html, field_report.json); result.json не меняется",
+    )
     p.add_argument("--no-map", action="store_true", help="не генерировать map.html")
     p.add_argument("--serve", action="store_true", help="после расчёта запустить веб-интерфейс FastAPI")
     p.add_argument("--host", default="127.0.0.1")
@@ -154,6 +159,55 @@ def scenario_summary(s: ScenarioResult) -> str:
     return "\n".join(lines)
 
 
+def include_field(pr: PipelineResult, db: Path, out: Path, no_map: bool) -> tuple[list[str], list[str]]:
+    """Карта «с полевыми»: отдельные файлы, result.json не затрагивается."""
+    from coverage.field_ingest import build_field_map_data, field_diff, run_pipeline_with_field
+    from coverage.field_store import FieldStore
+    from coverage.render import build_map_data, render_page
+    from coverage.result import write_json
+
+    if not db.exists():
+        raise DataValidationError(f"--include-field: файл базы не найден: {db}")
+    store = FieldStore(db)
+    try:
+        df, by_source, version = store.as_dataframe(), store.count_by_source(), store.version()
+    finally:
+        store.close()
+    withf = run_pipeline_with_field(pr, df)
+    diff = field_diff(pr, withf)
+    data = build_field_map_data(build_map_data(pr), pr, withf, df, diff, version, by_source)
+    report = {
+        "field_count": len(df),
+        "by_source": by_source,
+        "official_result": pr.result,
+        "result_with_field": withf.result,
+        "field_diff": diff,
+    }
+    written = [str(write_json(out / "field_report.json", report))]
+    if not no_map:
+        html = out / "map_with_field.html"
+        html.parent.mkdir(parents=True, exist_ok=True)
+        html.write_text(render_page(data, server_mode=False), encoding="utf-8")
+        written.append(str(html))
+    s = diff["summary"]
+    lines = [
+        f"Field: {len(df)} measurements included ({', '.join(f'{k} {v}' for k, v in by_source.items() if v) or 'none'}); "
+        f"cells changed {s['cells_changed']} (became counted {s['became_counted']}, colour changed {s['class_changed']})",
+    ]
+    bp = diff["best_pair"]
+    if bp["changed"]:
+        lines.append(
+            f"  best pair with field: {' + '.join(bp['after'])} (official: {' + '.join(bp['before'])}); result.json unchanged"
+        )
+    for c in diff["cells"][:10]:
+        b, a = c["before"], c["after"]
+        lines.append(
+            f"  {c['cell_id']}: n {b['n'] if b else 0} -> {a['n'] if a else 0}"
+            + (f", {b['cls']} -> {a['cls']}" if a and b and a["cls"] != b["cls"] else "")
+        )
+    return lines, written
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(
@@ -179,9 +233,15 @@ def main(argv: list[str] | None = None) -> int:
             written.insert(1, str(write_map_html(pr, out / o.map_file)))
         if scenario is not None:
             written.append(str(write_json(out / o.scenario_file, scenario.to_dict())))
+        field_lines: list[str] = []
+        if args.include_field:
+            field_lines, field_written = include_field(pr, Path(args.include_field), out, args.no_map)
+            written += field_written
         print(summary(pr, [Path(w).name if Path(w).parent == ROOT else w for w in written]))
         if scenario is not None:
             print(scenario_summary(scenario))
+        if field_lines:
+            print("\n".join(field_lines))
     except (DataValidationError, ConfigError, ScenarioError) as exc:
         print(f"Ошибка входных данных: {exc}", file=sys.stderr)
         return 2
