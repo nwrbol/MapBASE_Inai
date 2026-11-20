@@ -107,7 +107,7 @@ def test_infeasible_is_200(client):
     cands = client.get("/api/candidates").json()
     ids = [c["id"] for c in cands if c["admissible"]]
     body = client.post("/api/scenario", json={"excluded": [refusal(i) for i in ids[:-1]]}).json()
-    assert body["feasible"] is False and body["best"] is None and "осталось 1" in body["message"]
+    assert body["feasible"] is False and body["best"] is None and "доступно площадок: 1" in body["message"]
 
 
 def test_evaluate_pair(client):

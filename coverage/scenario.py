@@ -357,7 +357,7 @@ def run_scenario(
     available = _allowed_ids(covers, constraints)
     if not ranked:
         message = (
-            f"сценарий невыполним: после отказов осталось {len(available)} доступных площадок, нужно не меньше двух"
+            f"сценарий невыполним: после отказов доступно площадок: {len(available)}, нужно не меньше двух"
             if len(available) < 2
             else "сценарий невыполним: нет пары, удовлетворяющей фиксации"
         )

@@ -37,6 +37,32 @@
         </div>
       </section>
 
+      <section class="card" id="scenario-card">
+        <h2>Сценарий <span class="muted small">а если владелец против?</span></h2>
+        <div id="sc-cards" class="sc-cards"></div>
+        <p id="sc-notice" class="sc-notice hidden">Сценарий отличается от result.json. Для автопроверки используется оптимум по ТЗ.</p>
+        <p id="sc-message" class="sc-message hidden" role="alert"></p>
+        <div id="sc-replacements"></div>
+        <div id="sc-ties"></div>
+        <div id="sc-alts-wrap">
+          <h3>Альтернативы <span class="muted small" id="sc-alts-count"></span></h3>
+          <table class="grid-t" id="t-alts">
+            <thead><tr><th>№</th><th>пара</th><th>покрыто</th><th>Δ</th><th title="клетки, покрытые обеими площадками">пересеч.</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="muted small">Клик по строке: предпросмотр на карте. «Выбрать»: сделать пару текущей.</p>
+        </div>
+        <div class="btn-row">
+          <button id="sc-reset" class="btn" type="button">Сбросить ограничения</button>
+          <button id="sc-download" class="btn" type="button">Скачать scenario.json</button>
+          <label class="btn" for="sc-upload">Загрузить scenario.json</label>
+          <input type="file" id="sc-upload" accept=".json,application/json" hidden>
+        </div>
+        <label class="manual-toggle"><input type="checkbox" id="manual-toggle"> Ручной выбор двух площадок <span class="muted small">(Esc: выход)</span></label>
+        <div id="manual-card" class="manual-card hidden"></div>
+        <p id="sc-status" class="small muted" aria-live="polite"></p>
+      </section>
+
       <section class="card">
         <h2>Очистка</h2>
         <table class="kv" id="t-clean"></table>
@@ -69,9 +95,10 @@
       <section class="card">
         <h2>Кандидаты</h2>
         <table class="grid-t" id="t-cands">
-          <thead><tr><th>id</th><th>статус</th><th>до БС, м</th><th>красных</th></tr></thead>
+          <thead><tr><th>id</th><th>статус площадки</th><th>до БС, м</th><th>красных</th><th title="насколько хуже станет лучшая пара, если откажет именно эта площадка">потеря при отказе</th></tr></thead>
           <tbody></tbody>
         </table>
+        <p class="muted small">«Отказ»: пересчёт без площадки (укажите причину). «Зафикс.»: площадка уже согласована, подбирается партнёр. Зафиксировать можно не больше двух.</p>
       </section>
 
       <section class="card">
@@ -113,10 +140,12 @@
 {% if inline %}
 <script>{{ assets.leaflet_js | safe }}</script>
 <script>{{ assets.heat_js | safe }}</script>
+<script>{{ assets.scenario_js | safe }}</script>
 <script>{{ assets.app_js | safe }}</script>
 {% else %}
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/vendor/leaflet-heat.js"></script>
+<script src="/static/scenario.js"></script>
 <script src="/static/app.js"></script>
 {% endif %}
 </body>

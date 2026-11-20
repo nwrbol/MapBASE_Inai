@@ -128,9 +128,9 @@ def test_infeasible_when_only_one_left(pr):
     ids = sorted(c.id for c in pr.candidates if c.admissible)
     s = run_scenario(pr, cons(ids[:-1]))
     assert not s.feasible and s.best is None and s.alternatives == []
-    assert "осталось 1" in s.message
+    assert "доступно площадок: 1" in s.message
     s0 = run_scenario(pr, cons(ids))
-    assert not s0.feasible and "осталось 0" in s0.message
+    assert not s0.feasible and "доступно площадок: 0" in s0.message
 
 
 # 11. синтетика: арифметика пар

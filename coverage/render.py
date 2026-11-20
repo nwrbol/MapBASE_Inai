@@ -131,6 +131,7 @@ def _assets() -> dict[str, str]:
         "leaflet_css": _inline_css_images((leaflet_dir / "leaflet.css").read_text(encoding="utf-8"), leaflet_dir),
         "leaflet_js": (leaflet_dir / "leaflet.js").read_text(encoding="utf-8"),
         "heat_js": (VENDOR / "leaflet-heat.js").read_text(encoding="utf-8"),
+        "scenario_js": (STATIC / "scenario.js").read_text(encoding="utf-8"),
         "app_css": (STATIC / "style.css").read_text(encoding="utf-8"),
         "app_js": (STATIC / "app.js").read_text(encoding="utf-8"),
     }

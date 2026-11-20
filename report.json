@@ -419,7 +419,7 @@
         "X018_Y011"
       ],
       "depth_db": 519.1,
-      "elapsed_ms": 0.935,
+      "elapsed_ms": 1.013,
       "pairs_evaluated": 120,
       "ties": [
         [
@@ -547,7 +547,7 @@
         "X015_Y010"
       ],
       "depth_db": 619.15,
-      "elapsed_ms": 0.062,
+      "elapsed_ms": 0.06,
       "pairs_evaluated": 31,
       "ties": [],
       "steps": [
@@ -789,16 +789,17 @@
       "result_file": "result.json",
       "report_file": "report.json",
       "map_file": "map.html",
+      "scenario_file": "scenario.json",
       "coord_decimals": 6,
       "rsrp_decimals": 4
     }
   },
   "timings_ms": {
-    "read": 12.944,
-    "cleaning": 48.547,
-    "grid": 10.004,
-    "selection": 2.711,
-    "daynight": 10.773,
-    "total": 91.379
+    "read": 14.578,
+    "cleaning": 52.457,
+    "grid": 13.829,
+    "selection": 3.238,
+    "daynight": 13.361,
+    "total": 103.362
   }
 }
