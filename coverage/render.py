@@ -123,6 +123,17 @@ def build_map_data(pr: PipelineResult) -> dict:
                 "b": bounds_by_id[cid],
             }
         )
+    # Клетки, учитываемые в основной сетке (n >= min_samples), но без сравнения: в одной из половин суток замеров мало
+    in_delta = {c["id"] for c in delta}
+
+    def half_n(frame: Any, cid: str) -> int:
+        return int(frame.at[cid, "n"]) if cid in frame.index else 0
+
+    delta_insufficient = [
+        {"id": c["id"], "b": c["b"], "n_day": half_n(by_day, c["id"]), "n_night": half_n(by_night, c["id"])}
+        for c in cells
+        if c["counted"] and c["id"] not in in_delta
+    ]
     b = s.bounds
     return to_jsonable(
         {
@@ -160,6 +171,7 @@ def build_map_data(pr: PipelineResult) -> dict:
                 "day_cells": dn_cells(grids["day"]),
                 "night_cells": dn_cells(grids["night"]),
                 "delta": delta,
+                "delta_insufficient": delta_insufficient,
             },
             "heat": pr.heat,
         }

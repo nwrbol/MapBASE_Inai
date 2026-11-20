@@ -169,6 +169,12 @@
       if (c.m_day !== undefined) tip += ` · день ${fmt(c.m_day, 2)} / ночь ${fmt(c.m_night, 2)} (n ${c.n_day} / ${c.n_night})`;
       rect(c.b, { color: "#555", weight: 0.3, fillColor: CL.DELTA_PALETTE[k], fillOpacity: 0.6 }).bindInfo(tip, { className: "dn-tip" }).addTo(delta);
     });
+    // клетки без сравнения (мало замеров днём или ночью): серая штриховка, а не пустое место
+    (dn.delta_insufficient || []).forEach((c) => {
+      rect(c.b, { color: "#6b7280", weight: 0.8, dashArray: "3 3", fillColor: "#9ca3af", fillOpacity: 0.25 })
+        .bindInfo(`<b>${esc(c.id)}</b><br>Недостаточно данных для сравнения: день n=${c.n_day}, ночь n=${c.n_night} (нужно ≥ ${m.min_samples} в каждой половине)`, { className: "dn-tip" })
+        .addTo(delta);
+    });
     const worseNight = L.featureGroup();
     const onlyNight = new Set(dn.red_only_night || []);
     d.cells.filter((c) => onlyNight.has(c.id)).forEach((c) => {
@@ -442,6 +448,7 @@
       if (sec.delta) {
         dnRows.push(el("div", "lg-note", `Δ = медиана ночью ${CL.MINUS} медиана днём:`));
         CL.deltaLegendItems(bins).forEach((i) => dnRows.push(row(swatch(i.color), i.text)));
+        dnRows.push(row(glyph("▨", "#6b7280"), `мало данных для сравнения (n < ${m.min_samples} днём или ночью)`));
       }
       if (sec.onlyNight) {
         const sw = swatch("rgba(124,58,237,.25)", CL.ONLY_NIGHT_COLOR);
@@ -530,6 +537,7 @@
         `<table class="grid-t"><thead><tr><th></th><th>замеров</th><th>клеток</th><th>зел/жёл/крас</th></tr></thead><tbody>` +
         `<tr><td>день</td><td>${dn.rows_day}</td><td>${dn.day.cells_counted}</td><td>${sh(dn.day)}</td></tr>` +
         `<tr><td>ночь</td><td>${dn.rows_night}</td><td>${dn.night.cells_counted}</td><td>${sh(dn.night)}</td></tr></tbody></table>` +
+        `<p>Сравнение по ${dn.common_cells} из ${d.stats.cells_counted} клеток; в остальных &lt; ${d.meta.min_samples} замеров днём или ночью.</p>` +
         `<p>Общих клеток: ${dn.common_cells}; медиана Δ (ночь − день): <b>${fmt(dn.median_delta_db, 2)} дБ</b>. ` +
         `Красные только ночью: ${dn.red_only_night.length}, только днём: ${dn.red_only_day.length}.</p>` +
         `<p class="muted">Окно дня: ${esc(dn.window)}. Слои «День», «Ночь», «Δ» — в переключателе.</p>` +

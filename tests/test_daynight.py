@@ -78,3 +78,17 @@ def test_js_legend_unit_tests_with_node():
         pytest.skip("node не установлен: проверки легенды описаны в README, «Проверка UI»")
     r = subprocess.run([node, "--test", str(ROOT / "tests" / "js")], capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_delta_insufficient_complements_delta(client):
+    d = client.get("/api/mapdata").json()
+    dn, counted = d["daynight"], d["stats"]["cells_counted"]
+    assert dn["delta_insufficient"]
+    assert len(dn["delta"]) + len(dn["delta_insufficient"]) == counted
+    assert not {c["id"] for c in dn["delta"]} & {c["id"] for c in dn["delta_insufficient"]}
+    min_n = d["meta"]["min_samples"]
+    by_id = {c["id"]: c for c in d["cells"]}
+    for c in dn["delta_insufficient"]:
+        assert {"id", "b", "n_day", "n_night"} <= set(c)
+        assert by_id[c["id"]]["counted"] and (c["n_day"] < min_n or c["n_night"] < min_n)
+    assert len(dn["delta"]) == dn["common_cells"]
