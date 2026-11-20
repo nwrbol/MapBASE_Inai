@@ -42,19 +42,6 @@
         <div class="preview-legend"><span><i class="green"></i>Хороший</span><span><i class="yellow"></i>Средний</span><span><i class="red"></i>Слабый</span><span><i class="empty"></i>Мало данных</span></div>
       </a>
     </section>
-    <dl class="metrics" aria-label="Результаты на исходных данных">
-      <div><dt>Замеров после очистки</dt><dd>{{ map.cleaning.kept }}</dd></div>
-      <div><dt>Слабых клеток найдено</dt><dd>{{ map.stats.red }}</dd></div>
-      <div><dt>Клеток покрывает лучшая пара</dt><dd>{{ map.result.covered_weak_cells }}</dd></div>
-    </dl>
-    <section class="method" aria-labelledby="method-title">
-      <h2 id="method-title">Как работает проект</h2>
-      <div class="method-grid">
-        <article><h3>Очистка замеров</h3><p>Удаляем дубли, неверные значения и точки за границами района.</p></article>
-        <article><h3>Оценка сигнала</h3><p>Считаем медиану RSRP в клетках с достаточным числом замеров. Цвет показывает уровень сигнала.</p></article>
-        <article><h3>Выбор площадок</h3><p>Перебираем пары и выбираем ту, которая покрывает больше всего слабых клеток без двойного учёта.</p></article>
-      </div>
-    </section>
   </main>
 </body>
 </html>
