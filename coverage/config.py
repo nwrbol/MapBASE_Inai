@@ -73,6 +73,8 @@ class DayNightSettings:
     timezone: str = "Asia/Bishkek"
     day_start_hour: int = 8
     day_end_hour: int = 20
+    # Пороги шкалы Δ = медиана ночью − медиана днём, дБ: четыре цвета на три порога (карта и легенда берут их отсюда)
+    delta_bins_db: tuple = (-3, 0, 3)
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,14 @@ def _validate(s: Settings) -> None:
         raise ConfigError(f"cleaning.dedup_subset: допустимы столбцы {sorted(_DEDUP_COLUMNS)}")
     if not (0 <= s.daynight.day_start_hour <= 24 and 0 <= s.daynight.day_end_hour <= 24):
         raise ConfigError("daynight: часы должны быть в диапазоне 0..24")
+    bins = s.daynight.delta_bins_db
+    if (
+        not isinstance(bins, (list, tuple))
+        or len(bins) != 3
+        or any(isinstance(b, bool) or not isinstance(b, (int, float)) for b in bins)
+        or not bins[0] < bins[1] < bins[2]
+    ):
+        raise ConfigError("daynight.delta_bins_db: нужны три возрастающих числа, например [-3, 0, 3]")
     if s.bounds.polygon is not None:
         poly = s.bounds.polygon
         if not isinstance(poly, list) or len(poly) < 3 or any(len(p) != 2 for p in poly):

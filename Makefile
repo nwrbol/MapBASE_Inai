@@ -1,6 +1,6 @@
 PY ?= python3
 
-.PHONY: install run serve test lint format selfcheck samples screenshot clean
+.PHONY: install run serve test test-js lint format selfcheck samples screenshot clean
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -13,6 +13,9 @@ serve:
 
 test:
 	$(PY) -m pytest
+
+test-js:
+	node --test tests/js
 
 lint:
 	$(PY) -m ruff check .

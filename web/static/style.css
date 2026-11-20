@@ -80,8 +80,36 @@ details summary { cursor: pointer; font-size: 12.5px; margin: 4px 0; }
 
 /* Leaflet: легенда, подписи, звёзды */
 .legend { background: rgba(255, 255, 255, .95); color: #1d2330; padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow); font-size: 12px; line-height: 1.6; }
-.legend i { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border: 1px solid rgba(0, 0, 0, .25); }
+.legend i, .sw { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border: 1px solid rgba(0, 0, 0, .25); }
 .legend .line { display: inline-block; width: 14px; height: 0; margin-right: 6px; vertical-align: 3px; }
+.legend .glyph { display: inline-block; min-width: 14px; margin-right: 6px; text-align: center; font-weight: 800; }
+.legend-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 24px; padding: 0; border: none; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.legend-toggle:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.legend-sign { font-size: 16px; line-height: 1; }
+.legend { width: max-content; max-width: min(300px, 86vw); box-sizing: border-box; }
+.legend-body { max-height: 60vh; overflow-x: hidden; overflow-y: auto; margin-top: 4px; }
+.legend.collapsed .legend-body { display: none; }
+.legend .lg-title { display: block; }
+.legend .lg-note { margin: 2px 0; color: #4b5563; line-height: 1.35; white-space: normal; }
+.legend .lg-empty { color: #4b5563; }
+.legend .lg-sep { border: none; border-top: 1px solid rgba(0, 0, 0, .15); margin: 6px 0; }
+.legend .heat-bar, .sw.heat-bar { width: 64px; background: linear-gradient(90deg, blue, cyan, lime, yellow, red); }
+.dn-tip { white-space: normal; max-width: 320px; }
+.lg-row { line-height: 1.6; }
+
+/* Переключатель слоёв: «Снять все» и «По умолчанию» */
+.layers-actions { display: flex; gap: 6px; padding: 2px 0 8px; margin-bottom: 6px; border-bottom: 1px solid rgba(0, 0, 0, .12); }
+.layers-btn { flex: 1; font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; color: #111827; cursor: pointer; }
+.layers-btn:hover:not(:disabled) { background: #e2e8f0; }
+.layers-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.layers-btn:disabled { opacity: .45; cursor: default; }
+.layers-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; padding: 10px 14px; border-radius: 10px; background: rgba(255, 255, 255, .95); color: #1d2330; box-shadow: var(--shadow); font-size: 14px; }
+.layers-empty-btn { font: inherit; font-size: 14px; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; color: #111827; cursor: pointer; }
+.layers-empty-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+@media (hover: none) and (max-width: 760px) {
+  .layers-btn { min-height: 44px; font-size: 15px; }
+  .layers-empty-btn { min-height: 44px; }
+}
 .rank-label { background: #111; color: #fff; border: none; font-weight: 700; padding: 1px 6px; }
 .rank-label::before { display: none; }
 .star-icon { font-size: 28px; line-height: 28px; text-align: center; color: #059669; text-shadow: 0 0 3px #fff, 0 0 6px #fff; }
@@ -171,7 +199,6 @@ tr.refusal-row td { padding: 2px 6px 8px; border-bottom: 1px solid var(--line); 
 .field-changes li { padding: 6px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
 .field-changes li:hover { background: rgba(37, 99, 235, .08); }
 .fpt { background: none; border: none; font-size: 15px; line-height: 15px; text-align: center; font-weight: 800; text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #000; }
-.legend-toggle { display: none; }
 .sheet-handle, .sheet-summary, .fab { display: none; }
 
 /* Мобильная версия: нижняя шторка (свёрнута / половина / весь экран), крупные цели касания */
@@ -221,8 +248,7 @@ tr.refusal-row td { padding: 2px 6px 8px; border-bottom: 1px solid var(--line); 
   .rank-label { font-size: 10px; padding: 0 4px; }
   .leaflet-tooltip { font-size: 11px; padding: 2px 5px; }
   .legend { padding: 4px 8px; font-size: 11px; line-height: 1.5; }
-  .legend .legend-body { display: none; }
-  .legend.open .legend-body { display: block; }
-  .legend-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border: none; background: none; font-size: 22px; cursor: pointer; color: inherit; }
-  .legend:not(.open) { padding: 0; }
+  .legend .legend-body { max-height: 45vh; max-height: 45dvh; }
+  .legend-toggle { min-height: 44px; }
+  .legend.collapsed { padding: 0 10px; }
 }

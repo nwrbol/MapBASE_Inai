@@ -46,6 +46,7 @@ daynight:
   timezone: Asia/Bishkek
   day_start_hour: 8          # день = [08:00, 20:00) местного времени
   day_end_hour: 20
+  delta_bins_db: [-3, 0, 3]  # пороги шкалы Δ (ночь − день), дБ: 4 цвета слоя «Δ» и пункты легенды
 
 heatmap:
   rsrp_strong: -44           # intensity = clip((rsrp_strong - rsrp) / span, 0, 1)

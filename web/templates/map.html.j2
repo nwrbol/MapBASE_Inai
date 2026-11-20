@@ -159,11 +159,13 @@
 {% if inline %}
 <script>{{ assets.leaflet_js | safe }}</script>
 <script>{{ assets.heat_js | safe }}</script>
+<script>{{ assets.layers_js | safe }}</script>
 <script>{{ assets.scenario_js | safe }}</script>
 <script>{{ assets.app_js | safe }}</script>
 {% else %}
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/vendor/leaflet-heat.js"></script>
+<script src="/static/layers.js"></script>
 <script src="/static/scenario.js"></script>
 <script src="/static/app.js"></script>
 {% endif %}

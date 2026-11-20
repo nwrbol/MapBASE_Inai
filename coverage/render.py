@@ -104,11 +104,25 @@ def build_map_data(pr: PipelineResult) -> dict:
         ]
 
     bounds_by_id = {c["id"]: c["b"] for c in cells}
-    delta = [
-        {"id": cid, "d": round(float(v), dec), "b": bounds_by_id[cid]}
-        for cid, v in grids["delta"].items()
-        if cid in bounds_by_id
-    ]
+    by_day = grids["day"].set_index("cell_id")
+    by_night = grids["night"].set_index("cell_id")
+    delta = []
+    for cid in grids["delta"].index:
+        if cid not in bounds_by_id:
+            continue
+        m_day = round(float(by_day.at[cid, "median_rsrp"]), dec)
+        m_night = round(float(by_night.at[cid, "median_rsrp"]), dec)
+        delta.append(
+            {
+                "id": cid,
+                "d": round(m_night - m_day, dec),  # из уже округлённых медиан: d == m_night − m_day
+                "m_day": m_day,
+                "m_night": m_night,
+                "n_day": int(by_day.at[cid, "n"]),
+                "n_night": int(by_night.at[cid, "n"]),
+                "b": bounds_by_id[cid],
+            }
+        )
     b = s.bounds
     return to_jsonable(
         {
@@ -123,6 +137,8 @@ def build_map_data(pr: PipelineResult) -> dict:
                 "red_below": s.classes.red_below,
                 "tower_exclusion_m": s.selection.tower_exclusion_m,
                 "coverage_radius_m": s.selection.coverage_radius_m,
+                "daynight_window": dn["window"],
+                "daynight_delta_bins": list(s.daynight.delta_bins_db),
             },
             "result": pr.result,
             "cleaning": pr.report["cleaning"],
@@ -170,6 +186,7 @@ def _assets() -> dict[str, str]:
         "leaflet_css": _inline_css_images((leaflet_dir / "leaflet.css").read_text(encoding="utf-8"), leaflet_dir),
         "leaflet_js": (leaflet_dir / "leaflet.js").read_text(encoding="utf-8"),
         "heat_js": (VENDOR / "leaflet-heat.js").read_text(encoding="utf-8"),
+        "layers_js": (STATIC / "layers.js").read_text(encoding="utf-8"),
         "scenario_js": (STATIC / "scenario.js").read_text(encoding="utf-8"),
         "app_css": (STATIC / "style.css").read_text(encoding="utf-8"),
         "app_js": (STATIC / "app.js").read_text(encoding="utf-8"),

@@ -16,18 +16,28 @@
   // На устройствах без наведения (телефоны) подсказки клеток открываются по тапу: popup вместо tooltip.
   const TOUCH = !!(window.matchMedia && window.matchMedia("(hover: none)").matches);
   L.Layer.include({
-    bindInfo(html) {
-      return TOUCH ? this.bindPopup(html) : this.bindTooltip(html);
+    bindInfo(html, opts) {
+      return TOUCH ? this.bindPopup(html, opts) : this.bindTooltip(html, opts);
     },
   });
+  const CL = window.CoverageLayers; // реестр слоёв, шкала Δ, разделы легенды (web/static/layers.js)
   // Снимок страницы до инициализации карты — для «Скачать map.html» в автономном режиме.
   const ORIGINAL_HTML = "<!doctype html>\n" + document.documentElement.outerHTML;
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = (v, d = 1) => (v === null || v === undefined ? "—" : Number(v).toFixed(d).replace("-", "−"));
 
-  let map, layerControl, legend;
+  let map, layerControl, legend, legendDiv;
   let groups = {};
+  // Какие слои включил пользователь. Переживает перестройку карты (пересчёт, файлы, сценарии, обновление полевых).
+  let activeKeys = null; // Set<key>; null до первой сборки
+  let available = new Set(); // слои, для которых сейчас есть данные (только они в переключателе)
+  let layerKeyOf = new Map(); // объект слоя Leaflet -> key
+  let rebuilding = false; // во время перестройки события overlayadd/overlayremove не меняют activeKeys
+  const LAYERS_STORAGE_KEY = "coverage-layers-v1";
+  const LEGEND_STORAGE_KEY = "coverage-legend-collapsed-v1";
+  // порядок добавления на карту = порядок отрисовки снизу вверх
+  const Z_ORDER = ["insufficient", "grid", "day", "night", "delta", "worseNight", "covered", "gained", "lost", "towers", "cands", "ghost", "chosen", "worst", "heat", "field"];
   let current = null; // текущие данные карты
   let analysisId = null; // id анализа загруженных файлов (веб-режим)
 
@@ -47,6 +57,14 @@
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: osmAttr }).addTo(map);
     }
     L.control.scale({ imperial: false }).addTo(map);
+    map.on("overlayadd overlayremove", (e) => {
+      if (rebuilding || !activeKeys) return;
+      const key = layerKeyOf.get(e.layer);
+      if (!key) return;
+      if (e.type === "overlayadd") activeKeys.add(key);
+      else activeKeys.delete(key);
+      afterActiveChange(e.type === "overlayremove");
+    });
     // Пока контейнер карты имеет нулевой размер (вёрстка ещё не готова, вкладка в фоне),
     // fitBounds уходит в максимальный зум. Поэтому подгоняем вид, когда размер появится.
     if (window.ResizeObserver) {
@@ -80,13 +98,14 @@
   function clearLayers() {
     Object.values(groups).forEach((g) => map.removeLayer(g));
     groups = {};
+    hideEmptyHint();
     if (layerControl) map.removeControl(layerControl);
     if (legend) map.removeControl(legend);
+    layerControl = legend = legendDiv = null;
   }
 
   function buildLayers(d, opts = {}) {
-    // при обновлении данных без перезагрузки сохраняем, какие слои включил пользователь
-    const keepVisible = opts.keepView ? Object.keys(groups).filter((k) => map.hasLayer(groups[k])) : null;
+    rebuilding = true;
     clearLayers();
     const m = d.meta;
 
@@ -142,76 +161,32 @@
     const day = dnLayer(dn.day_cells);
     const night = dnLayer(dn.night_cells);
     const delta = L.featureGroup();
+    const bins = m.daynight_delta_bins || CL.DEFAULT_BINS;
+    const deltaItems = CL.deltaLegendItems(bins);
     (dn.delta || []).forEach((c) => {
-      const v = c.d;
-      const col = v <= -3 ? "#b91c1c" : v < 0 ? "#f87171" : v < 3 ? "#93c5fd" : "#1d4ed8";
-      rect(c.b, { color: "#555", weight: 0.3, fillColor: col, fillOpacity: 0.6 }).bindInfo(`<b>${esc(c.id)}</b><br>Δ ночь − день: ${fmt(v, 2)} дБ`).addTo(delta);
+      const k = CL.deltaClass(c.d, bins);
+      let tip = `<b>${esc(c.id)}</b> · Δ ночь − день: ${fmt(c.d, 2)} дБ · ${esc(deltaItems[k].text)}`;
+      if (c.m_day !== undefined) tip += ` · день ${fmt(c.m_day, 2)} / ночь ${fmt(c.m_night, 2)} (n ${c.n_day} / ${c.n_night})`;
+      rect(c.b, { color: "#555", weight: 0.3, fillColor: CL.DELTA_PALETTE[k], fillOpacity: 0.6 }).bindInfo(tip, { className: "dn-tip" }).addTo(delta);
     });
     const worseNight = L.featureGroup();
     const onlyNight = new Set(dn.red_only_night || []);
     d.cells.filter((c) => onlyNight.has(c.id)).forEach((c) => {
-      rect(c.b, { color: "#7c3aed", weight: 2, fillColor: "#7c3aed", fillOpacity: 0.25 }).bindInfo(`<b>${esc(c.id)}</b><br>красная только ночью`).addTo(worseNight);
+      rect(c.b, { color: CL.ONLY_NIGHT_COLOR, weight: 2, fillColor: CL.ONLY_NIGHT_COLOR, fillOpacity: 0.25 }).bindInfo(`<b>${esc(c.id)}</b><br>красная только ночью`).addTo(worseNight);
     });
 
     const fieldLayer = buildFieldLayer(d);
     groups = { field: fieldLayer, grid, insufficient, worst, towers, cands, chosen, covered, ghost, lost, gained, heat, day, night, delta, worseNight };
-    [insufficient, grid, covered, lost, towers, cands, ghost, chosen, worst].forEach((g) => g.addTo(map));
-
-    layerControl = L.control.layers(null, {
-      "Сетка 200 м (медиана RSRP)": grid,
-      "Топ-3 худших": worst,
-      "Существующие БС, запрет 500 м": towers,
-      "Кандидаты (✕ отказ, 🔒 фиксация)": cands,
-      "Выбранная пара + 1 км": chosen,
-      "Оптимум по ТЗ (призрак)": ghost,
-      "Потерянные клетки": lost,
-      "Новые клетки": gained,
-      "Покрытые красные клетки": covered,
-      "Тепловая карта": heat,
-      "День (08–20)": day,
-      "Ночь": night,
-      "Δ ночь − день": delta,
-      "Красные только ночью": worseNight,
-      [`Недостаточно данных (n<${m.min_samples})`]: insufficient,
-    }, { collapsed: window.innerWidth < 760 }).addTo(map);
-
-    if (m.field_included) {
-      layerControl.addOverlay(fieldLayer, "Полевые замеры (◆ метка, ● GPS, ■ вручную, ▲ импорт)");
-      fieldLayer.addTo(map);
-    }
-    if (keepVisible) {
-      Object.entries(groups).forEach(([k, g]) => {
-        if (k !== "field" && !keepVisible.includes(k)) map.removeLayer(g);
-      });
-    }
-
-    legend = L.control({ position: window.matchMedia("(max-width: 760px)").matches ? "bottomleft" : "bottomright" });
-    legend.onAdd = () => {
-      const div = L.DomUtil.create("div", "legend");
-      let body =
-        `<b>Медиана RSRP</b><br>` +
-        `<i style="background:${COLORS.green}"></i>≥ ${m.green_min} дБм<br>` +
-        `<i style="background:${COLORS.yellow}"></i>${m.red_below} … ${m.green_min}<br>` +
-        `<i style="background:${COLORS.red}"></i>&lt; ${m.red_below} (слабая зона)<br>` +
-        `<i style="background:${COLORS.grey}"></i>n &lt; ${m.min_samples}, не учитывается<br>` +
-        `<span class="line" style="border-top:2px solid #1d4ed8"></span>покрыта парой<br>` +
-        `<span class="line" style="border-top:2px dashed #374151"></span>запрет ${m.tower_exclusion_m} м от БС<br>` +
-        `<span style="color:#059669">★</span> выбранная площадка, круг ${m.coverage_radius_m / 1000} км<br>` +
-        `<span style="color:#b91c1c;font-weight:800">✕</span> отказ &nbsp; 🔒 зафиксирована<br>` +
-        `<span class="line" style="border-top:2px dashed #6b7280"></span>оптимум по ТЗ («призрак»)<br>` +
-        `<i style="background:rgba(124,58,237,.35);border-color:#7c3aed"></i>потерянные клетки<br>` +
-        `<i style="background:rgba(8,145,178,.35);border-color:#0891b2"></i>новые клетки`;
-      if (m.field_included) body += `<br>◆ метка · ● GPS · ■ вручную · ▲ импорт (полевые)`;
-      div.innerHTML = `<button type="button" class="legend-toggle" aria-label="Легенда" aria-expanded="false">ⓘ</button><div class="legend-body">${body}</div>`;
-      const tgl = div.querySelector(".legend-toggle");
-      tgl.addEventListener("click", () => {
-        const open = div.classList.toggle("open");
-        tgl.setAttribute("aria-expanded", String(open));
-      });
-      L.DomEvent.disableClickPropagation(div);
-      return div;
-    };
-    legend.addTo(map);
+    layerKeyOf = new Map(Object.entries(groups).map(([k, g]) => [g, k]));
+    // слой попадает в переключатель, только если для него есть данные
+    available = new Set(CL.KEYS.filter((k) => groups[k]));
+    if (!m.field_included) available.delete("field");
+    if (!dn.available) CL.DAYNIGHT_KEYS.forEach((k) => available.delete(k));
+    if (activeKeys === null) activeKeys = initialActiveKeys();
+    createLayerControl(m, dn);
+    syncMapToActive();
+    rebuilding = false;
+    createLegend(m);
 
     const b = m.bounds;
     fitTarget = [[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]];
@@ -221,6 +196,278 @@
     }
     L.rectangle([[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]], { color: "#111", weight: 1, dashArray: "4 4", fill: false, interactive: false }).addTo(grid);
     renderScenarioLayers();
+  }
+
+  // ===================================================================================
+  // Переключатель слоёв: «Снять все» / «По умолчанию», сохранение выбора, динамическая легенда
+  // ===================================================================================
+
+  function initialActiveKeys() {
+    /* Приоритет: хеш #layers=… , затем localStorage, затем набор по умолчанию. */
+    const fromHash = CL.layersFromHash(location.hash);
+    if (fromHash) return fromHash;
+    try {
+      const stored = CL.parseLayersParam(localStorage.getItem(LAYERS_STORAGE_KEY));
+      if (stored) return stored;
+    } catch (e) {
+      /* нет доступа к storage */
+    }
+    return new Set(CL.DEFAULT_KEYS);
+  }
+
+  const onKeys = () => CL.activeAvailable(activeKeys, available);
+
+  function syncMapToActive() {
+    /* Приводит карту к activeKeys. Базовая подложка не трогается. Вызывать при rebuilding=true или из setActive. */
+    Z_ORDER.forEach((k) => {
+      const g = groups[k];
+      if (!g || !available.has(k)) return;
+      const want = activeKeys.has(k);
+      if (want && !map.hasLayer(g)) map.addLayer(g);
+      if (!want && map.hasLayer(g)) map.removeLayer(g);
+    });
+  }
+
+  function persistActive() {
+    try {
+      localStorage.setItem(LAYERS_STORAGE_KEY, CL.serializeLayersParam(activeKeys));
+    } catch (e) {
+      /* приватный режим */
+    }
+    persist(); // хеш (вместе с ограничениями сценария) и их localStorage
+  }
+
+  function afterActiveChange(showHint) {
+    persistActive();
+    updateLayerButtons();
+    updateLegend();
+    if (onKeys().size) hideEmptyHint();
+    else if (showHint) showEmptyHint();
+  }
+
+  function setActive(keys) {
+    activeKeys = new Set(keys);
+    rebuilding = true; // события от самих add/removeLayer не нужны: состояние выставлено выше
+    syncMapToActive();
+    rebuilding = false;
+    afterActiveChange(true);
+  }
+
+  function layerCtx(m, dn) {
+    return {
+      cellSize: m.cell_size_m,
+      exclusionM: m.tower_exclusion_m,
+      radiusKm: m.coverage_radius_m / 1000,
+      minSamples: m.min_samples,
+      window: m.daynight_window || (dn && dn.window) || "",
+    };
+  }
+
+  function createLayerControl(m, dn) {
+    const ctx = layerCtx(m, dn);
+    const overlays = {};
+    CL.OVERLAYS.filter((o) => available.has(o.key)).forEach((o) => {
+      overlays[CL.labelOf(o.key, ctx)] = groups[o.key];
+    });
+    layerControl = L.control.layers(null, overlays, { collapsed: window.innerWidth < 760 }).addTo(map);
+
+    const list = layerControl.getContainer().querySelector(".leaflet-control-layers-list");
+    const bar = L.DomUtil.create("div", "layers-actions");
+    bar.innerHTML =
+      '<button type="button" class="layers-btn" data-act="none" title="Выключить все слои" aria-label="Снять все галочки">Снять все</button>' +
+      '<button type="button" class="layers-btn" data-act="default" title="Вернуть стандартный набор слоёв" aria-label="Слои по умолчанию">По умолчанию</button>';
+    list.insertBefore(bar, list.firstChild); // над списком галочек
+    L.DomEvent.disableClickPropagation(bar); // клик не уходит в карту
+    L.DomEvent.disableScrollPropagation(bar);
+    bar.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn || btn.disabled) return;
+      if (btn.dataset.act === "none") setActive(new Set());
+      else setActive(new Set(CL.DEFAULT_KEYS));
+    });
+    updateLayerButtons();
+  }
+
+  function updateLayerButtons() {
+    if (!layerControl) return;
+    const root = layerControl.getContainer();
+    const none = root.querySelector('.layers-btn[data-act="none"]');
+    const def = root.querySelector('.layers-btn[data-act="default"]');
+    if (none) none.disabled = onKeys().size === 0;
+    if (def) def.disabled = CL.isDefaultSet(activeKeys);
+  }
+
+  // ---- подсказка «Все слои скрыты» -----------------------------------------------------------------
+
+  let emptyHint = null;
+  let emptyTimer = null;
+
+  function hideEmptyHint() {
+    clearTimeout(emptyTimer);
+    if (emptyHint) emptyHint.remove();
+    emptyHint = null;
+  }
+
+  function showEmptyHint() {
+    hideEmptyHint();
+    emptyHint = L.DomUtil.create("div", "layers-empty", map.getContainer());
+    emptyHint.setAttribute("role", "status");
+    emptyHint.append("Все слои скрыты · ");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "layers-empty-btn";
+    b.textContent = "По умолчанию";
+    b.addEventListener("click", () => setActive(new Set(CL.DEFAULT_KEYS)));
+    emptyHint.append(b);
+    L.DomEvent.disableClickPropagation(emptyHint);
+    emptyTimer = setTimeout(hideEmptyHint, 3000);
+  }
+
+  // ---- легенда ---------------------------------------------------------------------------------------
+
+  const PHONE = window.matchMedia("(max-width: 760px)");
+  let legendCollapsed = (() => {
+    try {
+      const v = localStorage.getItem(LEGEND_STORAGE_KEY);
+      if (v === "1") return true;
+      if (v === "0") return false;
+    } catch (e) {
+      /* нет доступа к storage */
+    }
+    return PHONE.matches; // на телефоне по умолчанию свёрнута в «ⓘ Легенда»
+  })();
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  const mn = (v) => String(v).replace("-", CL.MINUS);
+  function swatch(bg, border) {
+    const i = el("i", "sw");
+    i.style.background = bg;
+    if (border) i.style.borderColor = border;
+    return i;
+  }
+  function lineSwatch(css) {
+    const s = el("span", "line");
+    s.style.borderTop = css;
+    return s;
+  }
+  function glyph(ch, color) {
+    const g = el("span", "glyph", ch);
+    if (color) g.style.color = color;
+    return g;
+  }
+  function row(mark, text) {
+    const r = el("div", "lg-row");
+    r.append(mark, document.createTextNode(text));
+    return r;
+  }
+
+  function createLegend(m) {
+    legend = L.control({ position: PHONE.matches ? "bottomleft" : "bottomright" });
+    legend.onAdd = () => {
+      legendDiv = L.DomUtil.create("div", "legend");
+      L.DomEvent.disableClickPropagation(legendDiv);
+      L.DomEvent.disableScrollPropagation(legendDiv);
+      return legendDiv;
+    };
+    legend.addTo(map);
+    renderLegend();
+  }
+
+  function updateLegend() {
+    if (legendDiv && current) renderLegend();
+  }
+
+  function renderLegend() {
+    /* Весь текст идёт через textContent: данные сервера не вставляются как HTML. */
+    const m = current.meta;
+    // слои сценариев пусты, пока нет ограничений: пояснять нечего
+    const shown = onKeys();
+    ["ghost", "lost", "gained"].forEach((k) => {
+      if (groups[k] && !groups[k].getLayers().length) shown.delete(k);
+    });
+    const sec = CL.legendSections(shown);
+    const bins = m.daynight_delta_bins || CL.DEFAULT_BINS;
+    legendDiv.textContent = "";
+    legendDiv.classList.toggle("collapsed", legendCollapsed);
+
+    const toggle = el("button", "legend-toggle");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", String(!legendCollapsed));
+    toggle.setAttribute("aria-label", legendCollapsed ? "Развернуть легенду" : "Свернуть легенду");
+    toggle.append(el("span", "legend-title", "ⓘ Легенда"), el("span", "legend-sign", legendCollapsed ? "+" : CL.MINUS));
+    toggle.addEventListener("click", () => {
+      legendCollapsed = !legendCollapsed;
+      try {
+        localStorage.setItem(LEGEND_STORAGE_KEY, legendCollapsed ? "1" : "0");
+      } catch (e) {
+        /* приватный режим */
+      }
+      renderLegend();
+    });
+    legendDiv.append(toggle);
+    const body = el("div", "legend-body");
+    legendDiv.append(body);
+
+    if (sec.empty) {
+      body.append(el("div", "lg-empty", "Нет включённых слоёв"));
+      return;
+    }
+
+    const mainRows = [];
+    if (sec.rsrp) {
+      mainRows.push(el("b", "lg-title", "Медиана RSRP"));
+      mainRows.push(row(swatch(COLORS.green), `≥ ${mn(m.green_min)} дБм`));
+      mainRows.push(row(swatch(COLORS.yellow), `${mn(m.red_below)} … ${mn(m.green_min)}`));
+      mainRows.push(row(swatch(COLORS.red), `< ${mn(m.red_below)} (слабая зона)`));
+    }
+    if (sec.insufficient) mainRows.push(row(swatch(COLORS.grey), `n < ${m.min_samples}, не учитывается`));
+    if (sec.worst) mainRows.push(row(swatch("transparent", "#000"), "топ-3 худших клетки (#1…#3)"));
+    if (sec.covered) mainRows.push(row(lineSwatch("2px solid #1d4ed8"), "покрыта парой"));
+    if (sec.towers) mainRows.push(row(lineSwatch("2px dashed #374151"), `запрет ${m.tower_exclusion_m} м от БС`));
+    if (sec.chosen) mainRows.push(row(glyph("★", "#059669"), `выбранная площадка, круг ${m.coverage_radius_m / 1000} км`));
+    if (sec.cands) mainRows.push(row(glyph("✕", "#b91c1c"), "отказ · 🔒 зафиксирована"));
+    if (sec.ghost) mainRows.push(row(lineSwatch("2px dashed #6b7280"), "оптимум по ТЗ («призрак»)"));
+    if (sec.lost) mainRows.push(row(swatch("rgba(124,58,237,.35)", "#7c3aed"), "потерянные клетки"));
+    if (sec.gained) mainRows.push(row(swatch("rgba(8,145,178,.35)", "#0891b2"), "новые клетки"));
+    if (sec.field) mainRows.push(row(glyph("◆●■▲"), "полевые: метка · GPS · вручную · импорт"));
+
+    const dnRows = [];
+    if (sec.daynight) {
+      dnRows.push(el("b", "lg-title", "Сравнение день/ночь"));
+      if (sec.delta) {
+        dnRows.push(el("div", "lg-note", `Δ = медиана ночью ${CL.MINUS} медиана днём:`));
+        CL.deltaLegendItems(bins).forEach((i) => dnRows.push(row(swatch(i.color), i.text)));
+      }
+      if (sec.onlyNight) {
+        const sw = swatch("rgba(124,58,237,.25)", CL.ONLY_NIGHT_COLOR);
+        sw.style.borderWidth = "2px";
+        dnRows.push(row(sw, "красная только ночью"));
+      }
+      if (sec.window) {
+        const w = CL.dayWindowText(m.daynight_window);
+        dnRows.push(el("div", "lg-note", `«День» ${w}, «Ночь» — остальное время; цвета как у сетки; n ≥ ${m.min_samples} в каждой половине`));
+      }
+      if (sec.deltaNote) dnRows.push(el("div", "lg-note", `Δ — только клетки с n ≥ ${m.min_samples} и днём, и ночью`));
+    }
+
+    const heatRows = [];
+    if (sec.heat) {
+      const bar = el("i", "sw heat-bar");
+      heatRows.push(el("b", "lg-title", "Тепловая карта"));
+      const r = el("div", "lg-row");
+      r.append(document.createTextNode("сильнее "), bar, document.createTextNode(" слабее"));
+      heatRows.push(r);
+    }
+
+    [mainRows, dnRows, heatRows].filter((g) => g.length).forEach((g, i) => {
+      if (i > 0 && body.children.length) body.append(el("hr", "lg-sep"));
+      g.forEach((n) => body.append(n));
+    });
   }
 
   function fillPanel(d) {
@@ -285,7 +532,9 @@
         `<tr><td>ночь</td><td>${dn.rows_night}</td><td>${dn.night.cells_counted}</td><td>${sh(dn.night)}</td></tr></tbody></table>` +
         `<p>Общих клеток: ${dn.common_cells}; медиана Δ (ночь − день): <b>${fmt(dn.median_delta_db, 2)} дБ</b>. ` +
         `Красные только ночью: ${dn.red_only_night.length}, только днём: ${dn.red_only_day.length}.</p>` +
-        `<p class="muted">Окно дня: ${esc(dn.window)}. Слои «День», «Ночь», «Δ» — в переключателе.</p>`;
+        `<p class="muted">Окно дня: ${esc(dn.window)}. Слои «День», «Ночь», «Δ» — в переключателе.</p>` +
+        `<p class="muted">Цвета слоя «Δ» (ночь − день):</p>` +
+        CL.deltaLegendItems(d.meta.daynight_delta_bins).map((i) => `<div class="lg-row"><i class="sw" style="background:${i.color}"></i>${esc(i.text)}</div>`).join("");
     }
   }
 
@@ -475,6 +724,7 @@
       parts.push("ex=" + scenario.excluded.map((r) => [r.id, r.category, r.reason ? encodeURIComponent(r.reason) : ""].join(":").replace(/:$/, "")).join(","));
     }
     if (scenario.required.length) parts.push("req=" + scenario.required.join(","));
+    if (activeKeys && !CL.isDefaultSet(activeKeys)) parts.push("layers=" + CL.serializeLayersParam(activeKeys));
     return parts.join("&");
   }
 
@@ -842,9 +1092,13 @@
       }
     });
     window.addEventListener("hashchange", () => {
-      if (!current || location.hash.replace(/^#/, "") === hashFromState()) return;
-      const { constraints, dropped } = sanitize(parseHash(location.hash), current);
-      applyConstraints(constraints, dropped);
+      if (!current) return;
+      const layersInHash = CL.layersFromHash(location.hash);
+      if (location.hash.replace(/^#/, "") !== hashFromState()) {
+        const { constraints, dropped } = sanitize(parseHash(location.hash), current);
+        applyConstraints(constraints, dropped);
+      }
+      if (layersInHash && activeKeys && !CL.sameSet(layersInHash, activeKeys)) setActive(layersInHash);
     });
   }
 
@@ -996,6 +1250,7 @@
         L.circleMarker([c.lat, c.lon], { radius: 12, color: "#f59e0b", weight: 3, fill: false, interactive: false }).addTo(groups.chosen);
       }
     });
+    updateLegend(); // слои сценариев могли стать пустыми или непустыми
   }
 
   // ---- ручной режим ------------------------------------------------------------------------------
