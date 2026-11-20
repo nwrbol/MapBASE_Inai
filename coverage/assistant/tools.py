@@ -61,6 +61,11 @@ class Context:
         self.use_data(pr, data)
         self.field_stats = field_stats or {}
         self.actions = []
+        # заполняются маршрутом чата: хранилище полевых замеров, исходный набор, устройство пользователя
+        self.field_store = None
+        self.base_pr = pr
+        self.device_id = None
+        self.proposals = 0
         raw = state.get("constraints", {})
         self.constraints = Constraints(
             tuple(Refusal(**r) for r in raw.get("excluded", [])), tuple(raw.get("required", []))
@@ -185,8 +190,9 @@ def get_daynight(ctx):
 
 @tool
 def get_field_stats(ctx):
-    """Сводка полевых замеров без персональных данных."""
-    return {**ctx.field_stats, "changes": ctx.data.get("field_diff", {})}
+    """Сводка полевых замеров без персональных данных: всего, по источникам, за последний час, число авторов."""
+    version = ctx.field_store.version() if ctx.field_store is not None else None
+    return {**ctx.field_stats, "version": version, "changes": ctx.data.get("field_diff", {})}
 
 
 @tool
@@ -381,3 +387,6 @@ def highlight_cells(
 def set_panel_width(ctx, px: Annotated[int, Field(ge=320, le=960)]):
     """Задать ширину панели на компьютере."""
     return ctx.action("set_panel_width", dict(px=px), f"Ширина панели {px} px")
+
+
+from . import field_tools  # noqa: E402,F401  (регистрирует функции полевых замеров)

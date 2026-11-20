@@ -1693,6 +1693,7 @@
         plan:{pair:p.pair, covered:p.covered, delta:p.delta, source:p.source, pending:!!p.pending}, preview_pair:scenario.preview || null,
         constraints:constraintsPayload(), selected_pair:scenario.selected, last_clicked:lastClicked,
         field_included:fieldOn, panel_width:$("#panel").offsetWidth, is_mobile:MQ_MOBILE.matches,
+        field_count:fieldCountInfo ? fieldCountInfo.count : null, field_version:fieldVer,
       };
     },
     openTab(tab) {
@@ -1732,6 +1733,18 @@
       if (fieldOn === on) return;
       setFieldToggle(on);
       try { await loadDefault({keepView:true, highlight:on}); } catch (e) { setFieldToggle(!on); throw e; }
+    },
+    async refreshField() {
+      /* после добавления замера из чата: версия выросла, карта и счётчики обновляются тем же путём, что и опрос */
+      await pollField();
+    },
+    async showFieldPoints(minutes) {
+      await this.setFieldIncluded(true);
+      setActive(new Set([...activeKeys, "field"]));
+      const since = minutes ? Date.now() - minutes * 60000 : 0;
+      const pts = (current.field_points || []).filter((p) => !since || (p.created_at && Date.parse(p.created_at) >= since));
+      if (!pts.length) throw new Error("Подходящих полевых замеров нет");
+      map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])), { maxZoom: 17, padding: [30, 30] });
     },
     highlightCells(ids, seconds=5) {
       const layer=L.featureGroup();

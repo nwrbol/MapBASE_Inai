@@ -78,6 +78,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   const storageKey = "coverage-chat-v1";
   let history = [], pending = null, undo = null, clearConfirm = false;
   let device = "";
+  // тот же идентификатор устройства, что у страницы /field: он нужен для «моих» замеров и права удалять своё
+  function fieldDeviceId() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("field-device-id"));
+      if (typeof saved === "string" && /^[0-9a-f-]{36}$/i.test(saved)) return saved;
+    } catch {}
+    const id = crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, () => Math.floor(Math.random()*16).toString(16));
+    try { localStorage.setItem("field-device-id", JSON.stringify(id)); } catch {}
+    return id;
+  }
+  const fieldUrl = (a) => {
+    const q = new URLSearchParams();
+    if (a.lat !== undefined) q.set("lat", a.lat);
+    if (a.lon !== undefined) q.set("lon", a.lon);
+    if (a.rsrp_dbm !== undefined) q.set("rsrp", a.rsrp_dbm);
+    if (a.method) q.set("method", a.method);
+    return "/field" + (q.toString() ? "?" + q.toString() : "");
+  };
+  const openForm = (a, mobile) => (mobile ? (location.href = fieldUrl(a)) : window.open(fieldUrl(a), "_blank", "noopener"));
   try {
     device = sessionStorage.getItem("chat-device") || Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2,"0")).join("");
     sessionStorage.setItem("chat-device", device);
@@ -115,6 +134,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     select_pair:a=>app.selectPair(a.a,a.b), reset_plan:()=>app.resetPlan(),
     toggle_field:a=>app.setFieldIncluded(a.on), highlight_cells:a=>app.highlightCells(a.cell_ids,a.seconds),
     set_panel_width:a=>app.setPanelWidth(a.px),
+    show_field_points:a=>app.showFieldPoints(a.only_recent_minutes),
   };
   async function applyActions(actions,node,snapshot,dataset) {
     if (!actions.length) return;
@@ -123,6 +143,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     for (const {type,args,label} of actions) {
       const chip=document.createElement("span"); chip.className="chat-chip"; node.append(chip);
       try {
+        if (type==="propose_field_measurement") { proposalCard(node, chip, args, label, snapshot.is_mobile); continue; }
+        if (type==="open_field_form") {
+          // окно открывает пользователь кликом: иначе браузер заблокирует всплывающую вкладку
+          chip.textContent=label+" ";
+          const open=button(chip,"Открыть форму",()=>openForm(args,snapshot.is_mobile)); open.title="Ничего не отправляется автоматически";
+          continue;
+        }
         if (type==="open_tab" && snapshot.is_mobile && snapshot.open_tab==="assistant") {
           button(chip,label,()=>app.openTab(args.tab)); continue;
         }
@@ -146,6 +173,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  function proposalCard(node, chip, a, label, mobile) {
+    /* Предложение замера: в базу попадает только после кнопки «Добавить». */
+    chip.className="chat-chip chat-proposal";
+    chip.textContent=label+" ";
+    const status=document.createElement("span");
+    const done=(text)=>{ chip.querySelectorAll("button").forEach(b=>b.remove()); status.textContent=text; };
+    button(chip,"Добавить",async(ev)=>{
+      const b=ev.currentTarget; b.disabled=true;
+      try {
+        const res=await fetch("/api/field/measurements",{method:"POST",headers:{"Content-Type":"application/json","X-Device-Id":fieldDeviceId()},
+          body:JSON.stringify({items:[{lat:a.lat,lon:a.lon,rsrp_dbm:a.rsrp_dbm,timestamp:a.timestamp,source:"manual"}]})});
+        const data=await res.json().catch(()=>({}));
+        if (!res.ok) { console.error("field add:",data.detail); throw new Error("Не удалось добавить замер"); }
+        if (!data.accepted || !data.accepted.length) throw new Error((data.rejected?.[0]?.message)||"Замер отклонён");
+        const f=data.accepted[0];
+        done(`✓ Добавлено: клетка ${f.cell_id}, замеров ${f.n_after}${f.counted_after?" (клетка учитывается)":""}`);
+        try { await app.refreshField(); } catch {}
+      } catch(e) { b.disabled=false; status.textContent=" ✗ "+e.message; }
+    });
+    button(chip,"Изменить в форме",()=>openForm(a,mobile));
+    button(chip,"Отмена",()=>done("Отменено"));
+    chip.append(status);
+  }
+
   function busy(on) {
     input.disabled=on; form.querySelector(".primary").disabled=on; $("chat-clear").disabled=on; $("chat-stop").hidden=!on;
   }
@@ -159,7 +210,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const indicator=bubble("status","Ассистент печатает…");
     try {
       const state=collectMapState(), dataset=app.analysisId;
-      const res=await fetch("/api/assistant/chat",{method:"POST",headers:{"Content-Type":"application/json","X-Device-Id":device},
+      const res=await fetch("/api/assistant/chat",{method:"POST",headers:{"Content-Type":"application/json","X-Device-Id":fieldDeviceId()},
         body:JSON.stringify({messages:history.map(m=>({...m,content:m.content.slice(0,2000)})),map_state:state,analysis_id:dataset,include_field:state.field_included}),signal:ctrl.signal});
       const data=await res.json();
       if (!res.ok) {

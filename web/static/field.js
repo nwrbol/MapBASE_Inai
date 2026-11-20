@@ -1001,6 +1001,39 @@
     renderCellInfo(null);
     updateSubmit();
     api("/api/field/version").then((v) => ($("#count").textContent = v.count)).catch(() => {});
+    applyUrlParams();
+  }
+
+  function applyUrlParams() {
+    /* /field?lat=…&lon=…&rsrp=…&method=…: подставляем значения, ничего не отправляем. Неверное игнорируем с подсказкой. */
+    const q = new URLSearchParams(location.search);
+    if (!q.toString()) return;
+    const bad = [];
+    const m = q.get("method");
+    if (m !== null) {
+      if (["pin", "gps", "manual"].includes(m)) setMethod(m);
+      else bad.push("способ");
+    }
+    const rs = q.get("rsrp");
+    if (rs !== null) {
+      const v = Number(rs);
+      const lim = S.cfg.meta;
+      if (rs.trim() !== "" && Number.isFinite(v) && v >= lim.rsrp_min && v <= lim.rsrp_max) setRsrp(v);
+      else bad.push("RSRP");
+    }
+    const la = q.get("lat");
+    const lo = q.get("lon");
+    if (la !== null || lo !== null) {
+      const lat = Number(la);
+      const lon = Number(lo);
+      if (la !== null && lo !== null && la.trim() !== "" && lo.trim() !== "" && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        if (S.method === "gps") setMethod("pin"); // координаты заданы явно: метка, а не ожидание GPS
+        setPos(lat, lon);
+        if (inBoundsLocal(lat, lon)) S.map.setView([lat, lon], Math.max(S.map.getZoom(), 16));
+        else bad.push("координаты вне района");
+      } else bad.push("координаты");
+    }
+    if (bad.length) toast("warn", "Часть параметров из ссылки проигнорирована: " + esc(bad.join(", ")) + ".");
   }
 
   document.addEventListener("DOMContentLoaded", init);

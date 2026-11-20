@@ -11,7 +11,7 @@ from coverage.assistant.groq_client import ProviderError
 from coverage.assistant.prompt import OFF_TOPIC_REPLY
 from coverage.assistant.tools import Context, Id, Layer, Tab
 
-from .field_routes import field_map_view
+from .field_routes import _device, field_map_view
 from .ratelimit import RateLimitExceeded
 from .routes import _pick, _state
 
@@ -21,6 +21,7 @@ SUGGESTIONS = [
     "Что сейчас на экране?",
     "Покажи худшую клетку",
     "Где сигнал хуже ночью?",
+    "Где не хватает замеров рядом?",
     "Что такое RSRP?",
 ]
 
@@ -83,6 +84,8 @@ class MapState(Input):
     field_included: bool = False
     panel_width: int | None = None
     is_mobile: bool = False
+    field_count: int | None = None
+    field_version: int | None = None
 
 
 class Chat(Input):
@@ -140,6 +143,9 @@ def chat(request: Request, body: Chat):
     state = body.map_state.model_dump(exclude_none=True)
     state.update(uploaded=bool(body.analysis_id), field_included=body.include_field)
     ctx = Context(pr, data, state, st.field_store.count() if not body.analysis_id else {}, dataset)
+    ctx.field_store = st.field_store if not body.analysis_id else None
+    ctx.base_pr = base.pr
+    ctx.device_id = _device(request.headers.get("X-Device-Id"))
     try:
         result = answer(client, [m.model_dump() for m in body.messages], ctx)
     except ProviderError as exc:
