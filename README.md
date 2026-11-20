@@ -289,7 +289,7 @@ CLI и API вызывают одну и ту же `run_pipeline`, поэтому
 
 ```bash
 make test        # pytest: 210 тестов (сверка JS-движка с Python идёт через node и пропускается, если node нет)
-make test-js     # node --test tests/js: чистые функции слоёв и легенды (нужен node)
+make test-js     # node --test tests/js/*.mjs: чистые функции слоёв и легенды (нужен node)
 make lint        # ruff check + ruff format --check
 make selfcheck   # грязный набор «как у жюри»
 ```

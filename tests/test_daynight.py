@@ -76,7 +76,11 @@ def test_js_legend_unit_tests_with_node():
     node = shutil.which("node")
     if node is None:
         pytest.skip("node не установлен: проверки легенды описаны в README, «Проверка UI»")
-    r = subprocess.run([node, "--test", str(ROOT / "tests" / "js")], capture_output=True, text=True, encoding="utf-8")
+    files = sorted(str(p) for p in (ROOT / "tests" / "js").glob("*.mjs"))
+    if not files:
+        pytest.skip("нет JS-тестов в tests/js")
+    # файлы, а не каталог: в Node 22 аргумент --test воспринимается как путь к модулю
+    r = subprocess.run([node, "--test", *files], capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
 
 

@@ -1,4 +1,4 @@
-// Чистые функции слоёв и легенды (web/static/layers.js). Запуск: node --test tests/js   (make test-js)
+// Чистые функции слоёв и легенды (web/static/layers.js). Запуск: node --test tests/js/*.mjs   (make test-js)
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";

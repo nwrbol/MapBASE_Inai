@@ -15,7 +15,7 @@ test:
 	$(PY) -m pytest
 
 test-js:
-	node --test tests/js
+	node --test tests/js/*.mjs
 
 lint:
 	$(PY) -m ruff check .
