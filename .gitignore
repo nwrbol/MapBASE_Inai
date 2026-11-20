@@ -13,3 +13,5 @@ data/field.db
 data/field.db-wal
 data/field.db-shm
 *.db
+
+.env
