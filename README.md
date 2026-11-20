@@ -38,6 +38,12 @@ python run.py --measurements m.csv --towers t.csv --candidates c.csv --bounds bo
 python run.py --serve
 ```
 
+Деплой (Render, Railway, Heroku и т. п.): точка входа `main.py` в корне, команда запуска есть в `Procfile`:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
 Сводка в консоли на открытом наборе:
 
 ```
