@@ -32,7 +32,7 @@ python run.py --data-dir path/to/hidden --out out/
 python run.py --measurements m.csv --towers t.csv --candidates c.csv --bounds bounds.json --config config.yaml
 ```
 
-Веб-интерфейс (FastAPI) с загрузкой своих CSV, открывается на http://127.0.0.1:8000, OpenAPI на `/docs`:
+Веб-интерфейс (FastAPI) с загрузкой своих CSV, открывается на http://127.0.0.1:8000. Подробная карта доступна на `/map`, полевые замеры на `/field`, OpenAPI на `/docs`:
 
 ```bash
 python run.py --serve
@@ -274,7 +274,8 @@ CLI и API вызывают одну и ту же `run_pipeline`, поэтому
 
 | Метод | Путь | Что возвращает |
 |---|---|---|
-| GET | `/` | интерактивная карта |
+| GET | `/` | описание проекта и сводка по исходным данным |
+| GET | `/map` | интерактивная карта |
 | GET | `/health` | `{"status": "ok"}` |
 | GET | `/api/result`, `/api/report` | `result.json`, `report.json` для `data/` |
 | GET | `/api/grid` | GeoJSON клеток (`cell_id, n, median_rsrp, cls, is_worst, covered`) |

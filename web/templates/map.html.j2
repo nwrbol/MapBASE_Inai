@@ -9,147 +9,170 @@
 <style>{{ assets.app_css | safe }}</style>
 {% else %}
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/style.css">
 {% endif %}
 </head>
 <body class="{{ 'server' if server_mode else 'standalone' }}">
+{% if server_mode %}
+<header class="site-nav">
+  <a class="brand" href="/"><span class="brand-mark"></span>Карта покрытия</a>
+  <nav class="nav-links" aria-label="Навигация">
+    <a href="/">Проект</a><a href="/map" aria-current="page">Карта</a><a href="/field">Замеры</a>
+  </nav>
+</header>
+{% endif %}
 <div id="app">
   <aside id="panel" data-sheet="peek">
     <header class="panel-head">
       <button type="button" id="sheet-handle" class="sheet-handle" aria-label="Шторка с данными: нажмите или перетащите" aria-expanded="false"><span></span></button>
-      <h1>Карта покрытия</h1>
+      <h1>{{ "Анализ покрытия" if server_mode else "Карта покрытия" }}</h1>
       <p class="sub">ТЗ 7 · INAI 2026 · v{{ version }} · <span id="mode-label">{{ 'веб-режим' if server_mode else 'автономный файл' }}</span></p>
       <button id="panel-toggle" class="icon-btn" aria-label="Свернуть панель" title="Свернуть панель">⟨</button>
-      <div class="sheet-summary" id="sheet-summary" aria-live="polite"><b id="ss-pair">—</b><span id="ss-cov"></span><span id="ss-drop"></span></div>
+      <div class="sheet-summary" id="sheet-summary" aria-live="polite"><b id="ss-pair">—</b><span id="ss-cov"></span><span id="ss-drop"></span><button type="button" id="sheet-open" aria-controls="panel-navigation">Разделы ↑</button></div>
     </header>
 
+    <nav id="panel-navigation" class="panel-nav" aria-label="Разделы карты">
+      <button type="button" aria-controls="panel-overview" aria-pressed="true">Обзор</button>
+      <button type="button" aria-controls="panel-coverage" aria-pressed="false">Покрытие</button>
+      <button type="button" aria-controls="panel-planning" aria-pressed="false">Площадки</button>
+      <button type="button" aria-controls="panel-data" aria-pressed="false">Данные</button>
+    </nav>
     <div class="panel-body">
       <section id="err" class="card error hidden"></section>
 
-      <section class="card">
-        <h2>Итог</h2>
-        <div class="kpis">
-          <div class="kpi"><span class="kpi-v" id="k-pair">—</span><span class="kpi-l">лучшая пара</span></div>
-          <div class="kpi"><span class="kpi-v" id="k-covered">—</span><span class="kpi-l">красных клеток покрыто</span></div>
-          <div class="kpi"><span class="kpi-v" id="k-dropped">—</span><span class="kpi-l">строк отброшено</span></div>
-        </div>
-        <div class="btn-row">
-          <button id="dl-result" class="btn">Скачать result.json</button>
-          <button id="dl-map" class="btn">Скачать map.html</button>
-        </div>
-      </section>
+      <div class="panel-page" id="panel-overview">
+        <section class="card">
+          <h2>Итог</h2>
+          <div class="kpis">
+            <div class="kpi"><span class="kpi-v" id="k-pair">—</span><span class="kpi-l">лучшая пара</span></div>
+            <div class="kpi"><span class="kpi-v" id="k-covered">—</span><span class="kpi-l">красных клеток покрыто</span></div>
+            <div class="kpi"><span class="kpi-v" id="k-dropped">—</span><span class="kpi-l">строк отброшено</span></div>
+          </div>
+          <div class="btn-row">
+            <button id="dl-result" class="btn">Скачать result.json</button>
+            <button id="dl-map" class="btn">Скачать map.html</button>
+          </div>
+        </section>
 
-      <section class="card" id="scenario-card">
-        <h2>Сценарий <span class="muted small">а если владелец против?</span></h2>
-        <div id="sc-cards" class="sc-cards"></div>
-        <p id="sc-notice" class="sc-notice hidden">Сценарий отличается от result.json. Для автопроверки используется оптимум по ТЗ.</p>
-        <p id="sc-message" class="sc-message hidden" role="alert"></p>
-        <div id="sc-replacements"></div>
-        <div id="sc-ties"></div>
-        <div id="sc-alts-wrap">
-          <h3>Альтернативы <span class="muted small" id="sc-alts-count"></span></h3>
-          <table class="grid-t" id="t-alts">
-            <thead><tr><th>№</th><th>пара</th><th>покрыто</th><th>Δ</th><th title="клетки, покрытые обеими площадками">пересеч.</th><th></th></tr></thead>
+      </div>
+      <div class="panel-page" id="panel-coverage" hidden>
+        <section class="card">
+          <h2>Сетка <span class="muted" id="cell-size"></span></h2>
+          <div class="bars" id="cls-bars"></div>
+          <p class="muted small" id="cells-note"></p>
+        </section>
+
+        <section class="card">
+          <h2>Топ-3 худших клеток</h2>
+          <table class="grid-t" id="t-worst">
+            <thead><tr><th>#</th><th>cell_id</th><th>медиана, дБм</th><th>n</th></tr></thead>
             <tbody></tbody>
           </table>
-          <p class="muted small">Клик по строке: предпросмотр на карте. «Выбрать»: сделать пару текущей.</p>
-        </div>
-        <div class="btn-row">
-          <button id="sc-reset" class="btn" type="button">Сбросить ограничения</button>
-          <button id="sc-download" class="btn" type="button">Скачать scenario.json</button>
-          <label class="btn" for="sc-upload">Загрузить scenario.json</label>
-          <input type="file" id="sc-upload" accept=".json,application/json" hidden>
-        </div>
-        <label class="manual-toggle"><input type="checkbox" id="manual-toggle"> Ручной выбор двух площадок <span class="muted small">(Esc: выход)</span></label>
-        <div id="manual-card" class="manual-card hidden"></div>
-        <p id="sc-status" class="small muted" aria-live="polite"></p>
-      </section>
+          <p class="muted small">Клик по строке — перелёт к клетке.</p>
+        </section>
 
-      {% if server_mode %}
-      <section class="card" id="field-card">
-        <h2>Полевые замеры</h2>
-        <label class="manual-toggle"><input type="checkbox" id="field-toggle"> Учитывать полевые замеры</label>
-        <p class="small muted" id="field-count">Загрузка…</p>
-        <p id="field-banner" class="sc-notice hidden" role="status"></p>
-        <p id="field-bestpair" class="sc-message hidden" role="status"></p>
-        <div id="field-changes-wrap" class="hidden">
-          <h3>Изменения</h3>
-          <ul class="field-changes" id="field-changes"></ul>
-        </div>
-        <div class="btn-row"><a class="btn" href="/field">Открыть форму</a></div>
-        <p class="small muted">Полевые замеры хранятся отдельно и не влияют на result.json: он считается только по исходным данным.</p>
-      </section>
-      {% endif %}
+        <section class="card">
+          <h2>День и ночь</h2>
+          <div id="dn-summary" class="small"></div>
+        </section>
 
-      <section class="card">
-        <h2>Очистка</h2>
-        <table class="kv" id="t-clean"></table>
-      </section>
-
-      <section class="card">
-        <h2>Сетка <span class="muted" id="cell-size"></span></h2>
-        <div class="bars" id="cls-bars"></div>
-        <p class="muted small" id="cells-note"></p>
-      </section>
-
-      <section class="card">
-        <h2>Топ-3 худших клеток</h2>
-        <table class="grid-t" id="t-worst">
-          <thead><tr><th>#</th><th>cell_id</th><th>медиана, дБм</th><th>n</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <p class="muted small">Клик по строке — перелёт к клетке.</p>
-      </section>
-
-      <section class="card">
-        <h2>Перебор пар и жадный алгоритм</h2>
-        <table class="grid-t" id="t-compare">
-          <thead><tr><th>метод</th><th>пара</th><th>покрыто</th><th>мс</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <p class="small" id="compare-note"></p>
-      </section>
-
-      <section class="card">
-        <h2>Кандидаты</h2>
-        <table class="grid-t" id="t-cands">
-          <thead><tr><th>id</th><th>статус площадки</th><th>до БС, м</th><th>красных</th><th title="насколько хуже станет лучшая пара, если откажет именно эта площадка">потеря при отказе</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <p class="muted small">«Отказ»: пересчёт без площадки (укажите причину). «Зафикс.»: площадка уже согласована, подбирается партнёр. Зафиксировать можно не больше двух.</p>
-      </section>
-
-      <section class="card">
-        <h2>День и ночь</h2>
-        <div id="dn-summary" class="small"></div>
-      </section>
-
-      {% if server_mode %}
-      <section class="card">
-        <h2>Проверить на своих данных</h2>
-        <form id="upload" class="upload">
-          <label>measurements.csv <input type="file" name="measurements" accept=".csv,text/csv" required></label>
-          <label>towers.csv <input type="file" name="towers" accept=".csv,text/csv" required></label>
-          <label>candidates.csv <input type="file" name="candidates" accept=".csv,text/csv" required></label>
-          <label>bounds.json (необязательно) <input type="file" name="bounds" accept=".json,application/json"></label>
-          <details>
-            <summary>Параметры</summary>
-            <div class="params">
-              <label>Клетка, м <input type="number" name="cell_size_m" min="10" step="10" placeholder="200"></label>
-              <label>Мин. замеров <input type="number" name="min_samples" min="1" step="1" placeholder="5"></label>
-              <label>Радиус покрытия, м <input type="number" name="coverage_radius_m" min="1" placeholder="1000"></label>
-              <label>Запрет у БС, м <input type="number" name="tower_exclusion_m" min="0" placeholder="500"></label>
-            </div>
-          </details>
-          <div class="btn-row">
-            <button type="submit" class="btn primary">Пересчитать</button>
-            <button type="button" id="reset-default" class="btn">Открытый набор</button>
+      </div>
+      <div class="panel-page" id="panel-planning" hidden>
+        <section class="card" id="scenario-card">
+          <h2>Сценарий <span class="muted small">а если владелец против?</span></h2>
+          <div id="sc-cards" class="sc-cards"></div>
+          <p id="sc-notice" class="sc-notice hidden">Сценарий отличается от result.json. Для автопроверки используется оптимум по ТЗ.</p>
+          <p id="sc-message" class="sc-message hidden" role="alert"></p>
+          <div id="sc-replacements"></div>
+          <div id="sc-ties"></div>
+          <div id="sc-alts-wrap">
+            <h3>Альтернативы <span class="muted small" id="sc-alts-count"></span></h3>
+            <table class="grid-t" id="t-alts">
+              <thead><tr><th>№</th><th>пара</th><th>покрыто</th><th>Δ</th><th title="клетки, покрытые обеими площадками">пересеч.</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <p class="muted small">Клик по строке: предпросмотр на карте. «Выбрать»: сделать пару текущей.</p>
           </div>
-          <p class="small muted" id="upload-status"></p>
-        </form>
-        <p class="small"><a href="/docs" target="_blank" rel="noopener">OpenAPI /docs</a></p>
-      </section>
-      {% endif %}
+          <div class="btn-row">
+            <button id="sc-reset" class="btn" type="button">Сбросить ограничения</button>
+            <button id="sc-download" class="btn" type="button">Скачать scenario.json</button>
+            <label class="btn" for="sc-upload">Загрузить scenario.json</label>
+            <input type="file" id="sc-upload" accept=".json,application/json" hidden>
+          </div>
+          <label class="manual-toggle"><input type="checkbox" id="manual-toggle"> Ручной выбор двух площадок <span class="muted small">(Esc: выход)</span></label>
+          <div id="manual-card" class="manual-card hidden"></div>
+          <p id="sc-status" class="small muted" aria-live="polite"></p>
+        </section>
+
+        <section class="card">
+          <h2>Перебор пар и жадный алгоритм</h2>
+          <table class="grid-t" id="t-compare">
+            <thead><tr><th>метод</th><th>пара</th><th>покрыто</th><th>мс</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="small" id="compare-note"></p>
+        </section>
+
+        <section class="card">
+          <h2>Кандидаты</h2>
+          <table class="grid-t" id="t-cands">
+            <thead><tr><th>id</th><th>статус площадки</th><th>до БС, м</th><th>красных</th><th title="насколько хуже станет лучшая пара, если откажет именно эта площадка">потеря при отказе</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="muted small">«Отказ»: пересчёт без площадки (укажите причину). «Зафикс.»: площадка уже согласована, подбирается партнёр. Зафиксировать можно не больше двух.</p>
+        </section>
+
+      </div>
+      <div class="panel-page" id="panel-data" hidden>
+        {% if server_mode %}
+        <section class="card" id="field-card">
+          <h2>Полевые замеры</h2>
+          <label class="manual-toggle"><input type="checkbox" id="field-toggle"> Учитывать полевые замеры</label>
+          <p class="small muted" id="field-count">Загрузка…</p>
+          <p id="field-banner" class="sc-notice hidden" role="status"></p>
+          <p id="field-bestpair" class="sc-message hidden" role="status"></p>
+          <div id="field-changes-wrap" class="hidden">
+            <h3>Изменения</h3>
+            <ul class="field-changes" id="field-changes"></ul>
+          </div>
+          <div class="btn-row"><a class="btn" href="/field">Открыть форму</a></div>
+          <p class="small muted">Полевые замеры хранятся отдельно и не влияют на result.json: он считается только по исходным данным.</p>
+        </section>
+        {% endif %}
+
+        <section class="card">
+          <h2>Очистка</h2>
+          <table class="kv" id="t-clean"></table>
+        </section>
+
+        {% if server_mode %}
+        <section class="card">
+          <h2>Проверить на своих данных</h2>
+          <form id="upload" class="upload">
+            <label>measurements.csv <input type="file" name="measurements" accept=".csv,text/csv" required></label>
+            <label>towers.csv <input type="file" name="towers" accept=".csv,text/csv" required></label>
+            <label>candidates.csv <input type="file" name="candidates" accept=".csv,text/csv" required></label>
+            <label>bounds.json (необязательно) <input type="file" name="bounds" accept=".json,application/json"></label>
+            <details>
+              <summary>Параметры</summary>
+              <div class="params">
+                <label>Клетка, м <input type="number" name="cell_size_m" min="10" step="10" placeholder="200"></label>
+                <label>Мин. замеров <input type="number" name="min_samples" min="1" step="1" placeholder="5"></label>
+                <label>Радиус покрытия, м <input type="number" name="coverage_radius_m" min="1" placeholder="1000"></label>
+                <label>Запрет у БС, м <input type="number" name="tower_exclusion_m" min="0" placeholder="500"></label>
+              </div>
+            </details>
+            <div class="btn-row">
+              <button type="submit" class="btn primary">Пересчитать</button>
+              <button type="button" id="reset-default" class="btn">Открытый набор</button>
+            </div>
+            <p class="small muted" id="upload-status"></p>
+          </form>
+          <p class="small"><a href="/docs" target="_blank" rel="noopener">OpenAPI /docs</a></p>
+        </section>
+        {% endif %}
+      </div>
     </div>
   </aside>
   <main id="map" aria-label="Карта покрытия"></main>

@@ -171,7 +171,7 @@ def _assets() -> dict[str, str]:
         "leaflet_js": (leaflet_dir / "leaflet.js").read_text(encoding="utf-8"),
         "heat_js": (VENDOR / "leaflet-heat.js").read_text(encoding="utf-8"),
         "scenario_js": (STATIC / "scenario.js").read_text(encoding="utf-8"),
-        "app_css": (STATIC / "style.css").read_text(encoding="utf-8"),
+        "app_css": "\n".join((STATIC / name).read_text(encoding="utf-8") for name in ("theme.css", "style.css")),
         "app_js": (STATIC / "app.js").read_text(encoding="utf-8"),
     }
 
@@ -188,6 +188,10 @@ def safe_json(data: Any) -> str:
     """JSON для <script type="application/json">: экранируем '</' и спецсимволы."""
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     return text.replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+
+
+def render_home(map_data: dict) -> str:
+    return _env().get_template("home.html.j2").render(map=map_data)
 
 
 def render_page(map_data: dict | None, server_mode: bool = False) -> str:

@@ -1236,6 +1236,7 @@
 
   function updateSheetMetrics() {
     const h = $("#panel").getBoundingClientRect().height;
+    document.documentElement.style.setProperty("--workspace-height", `${$("#app").clientHeight}px`);
     document.documentElement.style.setProperty("--sheet-h", `${Math.round(h)}px`);
     if (map) map.invalidateSize();
   }
@@ -1253,8 +1254,12 @@
     const handle = $("#sheet-handle");
     let drag = null;
     let justDragged = false;
-    const snapHeights = () => ({ peek: SHEET_PEEK_PX, half: window.innerHeight * 0.5, full: window.innerHeight - SHEET_TOP_GAP_PX });
+    const snapHeights = () => ({ peek: SHEET_PEEK_PX, half: window.innerHeight * 0.5, full: $("#app").clientHeight - SHEET_TOP_GAP_PX });
 
+    $("#sheet-open").addEventListener("click", () => {
+      setSheet("half");
+      $(".panel-nav button[aria-pressed=true]").focus();
+    });
     handle.addEventListener("click", () => {
       if (justDragged || !MQ_MOBILE.matches) return;
       const i = SHEET_ORDER.indexOf(panel.dataset.sheet);
@@ -1305,9 +1310,24 @@
     onChange();
   }
 
+  function bindPanelNavigation() {
+    const buttons = [...document.querySelectorAll(".panel-nav button")];
+    const body = $(".panel-body");
+    buttons.forEach((button) => button.addEventListener("click", () => {
+      if (button.getAttribute("aria-pressed") === "true") return;
+      buttons.forEach((item) => {
+        const active = item === button;
+        item.setAttribute("aria-pressed", String(active));
+        document.getElementById(item.getAttribute("aria-controls")).hidden = !active;
+      });
+      body.scrollTop = 0;
+    }));
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     initMap();
     bindButtons();
+    bindPanelNavigation();
     bindUpload();
     bindCandidatesTable();
     bindScenarioPanel();

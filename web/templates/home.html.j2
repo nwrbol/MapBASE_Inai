@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <title>Карта покрытия · INAI 2026</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/home.css">
+</head>
+<body>
+  <header class="site-nav">
+    <a class="brand" href="/"><span class="brand-mark"></span>Карта покрытия</a>
+    <nav class="nav-links" aria-label="Навигация">
+      <a href="/" aria-current="page">Проект</a><a href="/map">Карта</a><a href="/field">Замеры</a>
+    </nav>
+  </header>
+  <main class="home">
+    <section class="hero" aria-labelledby="hero-title">
+      <div>
+        <p class="eyebrow">Осенний хакатон INAI 2026 · Задание № 7</p>
+        <h1 id="hero-title">Где слабый сигнал и как улучшить покрытие?</h1>
+        <p class="intro">Проект превращает замеры сигнала в карту района Бишкека, находит слабые зоны и предлагает две площадки для новых базовых станций.</p>
+        <div class="actions">
+          <a class="action primary" href="/map">Открыть карту <span aria-hidden="true">→</span></a>
+          <a class="action" href="/field">Добавить замер</a>
+        </div>
+      </div>
+      <a class="preview" href="/map" aria-label="Открыть карту покрытия">
+        <div class="preview-head"><strong>Покрытие района</strong><span>Сетка {{ map.meta.cell_size_m | int }} м</span></div>
+        {% set b = map.meta.bounds %}
+        {% set north = b.lat_max - b.lat_min %}
+        {% set east = b.lon_max - b.lon_min %}
+        <div class="signal-grid" aria-hidden="true">
+          {% if north > 0 and east > 0 %}
+            {% for cell in map.cells[:1600] + map.empty_cells[:400] %}
+              {% set south, west, top, right = cell.b %}
+              <i class="signal {{ cell.cls if cell.counted else 'empty' }}" style="left:{{ 100 * (west - b.lon_min) / east }}%;top:{{ 100 * (b.lat_max - top) / north }}%;width:{{ 100 * (right - west) / east }}%;height:{{ 100 * (top - south) / north }}%"></i>
+            {% endfor %}
+          {% endif %}
+        </div>
+        <div class="preview-legend"><span><i class="green"></i>Хороший</span><span><i class="yellow"></i>Средний</span><span><i class="red"></i>Слабый</span><span><i class="empty"></i>Мало данных</span></div>
+      </a>
+    </section>
+    <dl class="metrics" aria-label="Результаты на исходных данных">
+      <div><dt>Замеров после очистки</dt><dd>{{ map.cleaning.kept }}</dd></div>
+      <div><dt>Слабых клеток найдено</dt><dd>{{ map.stats.red }}</dd></div>
+      <div><dt>Клеток покрывает лучшая пара</dt><dd>{{ map.result.covered_weak_cells }}</dd></div>
+    </dl>
+    <section class="method" aria-labelledby="method-title">
+      <h2 id="method-title">Как работает проект</h2>
+      <div class="method-grid">
+        <article><h3>Очистка замеров</h3><p>Удаляем дубли, неверные значения и точки за границами района.</p></article>
+        <article><h3>Оценка сигнала</h3><p>Считаем медиану RSRP в клетках с достаточным числом замеров. Цвет показывает уровень сигнала.</p></article>
+        <article><h3>Выбор площадок</h3><p>Перебираем пары и выбираем ту, которая покрывает больше всего слабых клеток без двойного учёта.</p></article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
