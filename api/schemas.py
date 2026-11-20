@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class Health(BaseModel):
@@ -144,7 +144,7 @@ class FieldItem(BaseModel):
     timestamp: str = Field(min_length=1, max_length=64, description="ISO 8601; без пояса считается Asia/Bishkek")
     source: FieldSource = "manual"
     accuracy_m: float | None = Field(None, ge=0, description="точность GPS, м")
-    device_label: str | None = Field(None, max_length=50)
+    author_label: str | None = Field(None, max_length=50, validation_alias=AliasChoices("author_label", "device_label"))
 
 
 class FieldAddRequest(BaseModel):
@@ -180,7 +180,8 @@ class FieldRejected(BaseModel):
 class FieldAddResponse(BaseModel):
     accepted: list[FieldAccepted]
     rejected: list[FieldRejected]
-    field_version: int
+    version: int = Field(description="версия общей базы после запроса")
+    field_version: int = Field(description="то же, что version (прежнее имя)")
     dry_run: bool = False
     batch_id: str | None = None
     summary: dict[str, int] | None = Field(None, description="cells_changed / became_counted / class_changed")
@@ -189,5 +190,8 @@ class FieldAddResponse(BaseModel):
 
 class FieldVersion(BaseModel):
     version: int
-    count: int
+    count: int = Field(description="сколько замеров сейчас в общей базе")
     by_source: dict[str, int] = Field(default_factory=dict, description="map_pin / gps / manual / import")
+    authors: int = Field(0, description="сколько устройств добавляли замеры")
+    last_hour: int = Field(0, description="добавлено за последний час")
+    server_time: str

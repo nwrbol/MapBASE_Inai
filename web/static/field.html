@@ -160,7 +160,11 @@
   </section>
 
   <section class="card">
-    <h2>Последние замеры <span class="muted">(с этого устройства)</span></h2>
+    <h2>Замеры</h2>
+    <div id="list-tabs" class="subtabs" role="tablist">
+      <button type="button" role="tab" data-tab="all" aria-selected="true">Все</button>
+      <button type="button" role="tab" data-tab="mine" aria-selected="false">Мои</button>
+    </div>
     <ul id="recent" class="recent"></ul>
     <p class="muted small" id="recent-empty">Пока пусто.</p>
   </section>

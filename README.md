@@ -202,10 +202,10 @@ python run.py --constraints constraints.json     # {"excluded": [{"id": "C09", "
 | Метод | Путь | Что делает |
 |---|---|---|
 | GET | `/field` | мобильная страница сбора |
-| POST | `/api/field/measurements` | `{items:[{lat,lon,rsrp_dbm,timestamp,source,accuracy_m?,device_label?}], dry_run?}`, до 500; ответ: принятые с `cell_id, n_after, median_after, class_after, counted_after, became_counted, warning?` и отклонённые с причиной |
+| POST | `/api/field/measurements` | `{items:[{lat,lon,rsrp_dbm,timestamp,source,accuracy_m?,author_label?}], dry_run?}`, до 500; ответ: принятые с `cell_id, n_after, median_after, class_after, counted_after, became_counted, warning?` и отклонённые с причиной |
 | POST | `/api/field/paste` | вставка CSV-строк, общий `batch_id`, построчный разбор |
 | GET | `/api/field/measurements` | список (новые сверху), `?limit&offset&source` |
-| DELETE | `/api/field/measurements/{id}`, `/api/field/batches/{batch_id}`, `/api/field/measurements?confirm=yes` | удалить один, пакет или всё |
+| DELETE | `/api/field/measurements/{id}`, `/api/field/batches/{batch_id}`, `/api/field/all` (заголовок `X-Admin-Token`) | удалить свой замер, свой пакет или (админ) всё |
 | GET | `/api/field/version`, `/api/field/cell?lat&lon`, `/api/field/config` | версия и счётчики, подсказка о клетке, настройки страницы |
 | POST | `/api/field/import/preview`, `/api/field/import/commit` | импорт файла: шаг 1 без записи, шаг 2 с `confirm_units` |
 | GET | `/api/mapdata?include_field=true` | данные карты с полевыми (`n_field`, `field_points`, `field_diff`, `meta.field_count`); без параметра ответ прежний |

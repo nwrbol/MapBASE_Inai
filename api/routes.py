@@ -64,6 +64,7 @@ class AppState:
     field_store: FieldStore | None = None
     field_lock: Lock = field(default_factory=Lock)
     field_cache: OrderedDict = field(default_factory=OrderedDict)
+    admin_token: str | None = None  # env ADMIN_TOKEN: сброс общей базы; не задан -> сброс отключён
 
     def store(self, analysis: Analysis) -> str:
         key = uuid.uuid4().hex
@@ -74,10 +75,16 @@ class AppState:
         return key
 
 
-def create_state(data_dir: Path, config_path: Path | None, field_db_path: str | Path | None = None) -> AppState:
+def create_state(
+    data_dir: Path,
+    config_path: Path | None,
+    field_db_path: str | Path | None = None,
+    admin_token: str | None = None,
+) -> AppState:
     settings = load_settings(config_path)
     state = AppState(data_dir=data_dir, config_path=config_path, settings=settings)
     state.field_store = FieldStore(field_db_path)
+    state.admin_token = admin_token or None
     pr = run_pipeline(Inputs.from_dir(data_dir, settings.bounds.bounds_file), settings)
     state.default = Analysis(pr=pr, map_data=build_map_data(pr))
     return state

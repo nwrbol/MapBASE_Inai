@@ -170,7 +170,7 @@ def include_field(pr: PipelineResult, db: Path, out: Path, no_map: bool) -> tupl
         raise DataValidationError(f"--include-field: файл базы не найден: {db}")
     store = FieldStore(db)
     try:
-        df, by_source, version = store.as_dataframe(), store.count_by_source(), store.version()
+        df, by_source, version = store.as_dataframe(), store.count()["by_source"], store.version()
     finally:
         store.close()
     withf = run_pipeline_with_field(pr, df)

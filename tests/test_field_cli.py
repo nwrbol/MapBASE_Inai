@@ -51,7 +51,7 @@ def db(tmp_path_factory):
     accepted, _ = validate_field_rows(rows, settings, existing_frame(pr.clean, None))
     path = tmp_path_factory.mktemp("clidb") / "field.db"
     store = FieldStore(path)
-    store.add_many([a.to_store() for a in accepted])
+    store.add_many([a.to_store() for a in accepted], "dddddddd-dddd-4ddd-8ddd-dddddddddddd")
     store.close()
     return path, cell.cell_id
 

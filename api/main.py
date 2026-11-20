@@ -28,6 +28,7 @@ def create_app(
     data_dir: str | Path | None = None,
     config_path: str | Path | None = None,
     field_db_path: str | Path | None = None,
+    admin_token: str | None = None,
 ) -> FastAPI:
     data = Path(data_dir or os.environ.get("COVERAGE_DATA_DIR") or ROOT / "data")
     cfg_env = config_path or os.environ.get("COVERAGE_CONFIG")
@@ -36,7 +37,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Результат по датасету по умолчанию считается один раз на старте и кэшируется.
-        app.state.coverage = create_state(data, cfg, field_db_path)
+        app.state.coverage = create_state(data, cfg, field_db_path, admin_token or os.environ.get("ADMIN_TOKEN"))
         yield
         if app.state.coverage.field_store is not None:
             app.state.coverage.field_store.close()

@@ -31,15 +31,18 @@ def pr(settings):
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     db = tmp_path_factory.mktemp("imp") / "field.db"
-    with TestClient(create_app(data_dir=OPEN_DATA, field_db_path=db)) as c:
+    with TestClient(
+        create_app(data_dir=OPEN_DATA, field_db_path=db),
+        headers={"X-Device-Id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"},
+    ) as c:
         yield c
 
 
 @pytest.fixture(autouse=True)
 def _clean(client):
-    client.delete("/api/field/measurements", params={"confirm": "yes"})
+    client.app.state.coverage.field_store.clear()
     yield
-    client.delete("/api/field/measurements", params={"confirm": "yes"})
+    client.app.state.coverage.field_store.clear()
 
 
 def preview(settings, pr, data: bytes, **opts):
@@ -332,7 +335,10 @@ def test_size_and_row_limits_give_413(tmp_path):
     )
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(cfg, encoding="utf-8")
-    with TestClient(create_app(data_dir=OPEN_DATA, config_path=cfg_path, field_db_path=tmp_path / "f.db")) as c:
+    with TestClient(
+        create_app(data_dir=OPEN_DATA, config_path=cfg_path, field_db_path=tmp_path / "f.db"),
+        headers={"X-Device-Id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"},
+    ) as c:
         too_big = b"lat,lon,rsrp,timestamp\n" + b"1,2,3,2026-11-20T22:00:00+06:00\n" * 40
         for call in (api_preview, api_commit):
             r = call(c, too_big)

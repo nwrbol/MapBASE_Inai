@@ -17,6 +17,7 @@ import pandas as pd
 
 from .cleaning import classify_rows
 from .config import Settings
+from .field_store import device_tag
 from .grid import assign_cells, classify
 from .pipeline import PipelineResult, analyze_clean
 from .timeutil import get_zone, parse_timestamps
@@ -38,7 +39,7 @@ class NormRow:
     timestamp: str  # ISO 8601 со смещением (по умолчанию +06:00)
     source: str
     accuracy_m: float | None = None
-    device_label: str | None = None
+    author_label: str | None = None
     warning: str | None = None
 
     def to_store(self, batch_id: str | None = None) -> dict:
@@ -49,7 +50,7 @@ class NormRow:
             "timestamp": self.timestamp,
             "source": self.source,
             "accuracy_m": self.accuracy_m,
-            "device_label": self.device_label,
+            "author_label": self.author_label,
             "batch_id": batch_id,
         }
 
@@ -143,7 +144,9 @@ def validate_field_rows(
                 continue
             row = rows[i]
             acc = None if row.get("accuracy_m") is None else float(row["accuracy_m"])
-            label = str(row.get("device_label") or "").strip()[: fs.device_label_max] or None
+            label = (
+                str((row.get("author_label") or row.get("device_label")) or "").strip()[: fs.device_label_max] or None
+            )
             accepted.append(
                 NormRow(
                     index=i,
@@ -153,7 +156,7 @@ def validate_field_rows(
                     timestamp=verdict.ts.iloc[j].tz_convert(tz).isoformat(),
                     source=str(row.get("source") or "manual"),
                     accuracy_m=acc,
-                    device_label=label,
+                    author_label=label,
                     warning=LOW_ACCURACY if acc is not None and acc > fs.accuracy_warn_m else None,
                 )
             )
@@ -311,6 +314,11 @@ def field_diff(base: PipelineResult, withf: PipelineResult) -> dict:
     }
 
 
+def _opt(v: Any) -> Any:
+    """None и NaN -> None."""
+    return None if v is None or (isinstance(v, float) and np.isnan(v)) else v
+
+
 def field_points(field_df: pd.DataFrame, settings: Settings) -> list[dict]:
     """Точки для слоя карты: координаты, RSRP, источник, время, точность, клетка."""
     if field_df is None or field_df.empty:
@@ -327,6 +335,10 @@ def field_points(field_df: pd.DataFrame, settings: Settings) -> list[dict]:
             "timestamp": r.timestamp,
             "accuracy_m": None if pd.isna(r.accuracy_m) else float(r.accuracy_m),
             "batch_id": None if r.batch_id is None or pd.isna(r.batch_id) else r.batch_id,
+            "author": _opt(getattr(r, "author_label", None)),
+            "dev": device_tag(_opt(getattr(r, "device_id", None))),
+            "seq": int(getattr(r, "seq", 0) or 0),
+            "created_at": _opt(getattr(r, "created_at", None)),
             "cell_id": cell,
         }
         for r, cell in zip(field_df.itertuples(index=False), cells)

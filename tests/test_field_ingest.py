@@ -147,8 +147,8 @@ def test_bad_accuracy_rejected(settings, pr, cell3):
 
 
 def test_device_label_is_trimmed(settings, pr, cell3):
-    acc, _ = one([item(cell3.center_lat, cell3.center_lon, device_label=" " + "я" * 80)], settings, pr)
-    assert len(acc[0].device_label) == settings.field_data.device_label_max
+    acc, _ = one([item(cell3.center_lat, cell3.center_lon, author_label=" " + "я" * 80)], settings, pr)
+    assert len(acc[0].author_label) == settings.field_data.device_label_max
 
 
 def test_good_rows_survive_a_bad_one(settings, pr, cell3):

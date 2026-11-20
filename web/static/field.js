@@ -9,8 +9,8 @@
   const num = (v, d = 1) => (v === null || v === undefined ? "—" : Number(v).toFixed(d).replace("-", MINUS));
   const CLS_RU = { green: "зелёная", yellow: "жёлтая", red: "красная" };
   const SOURCE_RU = { map_pin: "метка", gps: "GPS", manual: "вручную", import: "импорт" };
-  const KEYS = { rsrp: "field-last-rsrp", label: "field-device-label", recent: "field-recent-v1" };
-  const RECENT_MAX = 50;
+  const KEYS = { rsrp: "field-last-rsrp", label: "field-device-label", device: "field-device-id" };
+  const LIST_LIMIT = 50;
   const HINT_DELAY_MS = 200;
   const GPS_SETTLE_MS = 10000;
   const GPS_GOOD_ENOUGH_M = 10;
@@ -36,8 +36,29 @@
     },
   };
 
+  /* Идентификатор устройства: не аутентификация, а право удалять своё и подпись в ленте.
+     randomUUID есть только в защищённом контексте (https), на http по локальной сети его нет: запасной вариант. */
+  function uuid4() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    const b = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b);
+    else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  const DEVICE_ID = (() => {
+    const saved = store.get(KEYS.device, null);
+    if (typeof saved === "string" && /^[0-9a-f-]{36}$/i.test(saved)) return saved;
+    const id = uuid4();
+    store.set(KEYS.device, id); // localStorage недоступен: id живёт, пока открыта вкладка
+    return id;
+  })();
+
   const S = {
     cfg: null,
+    list: { tab: "all", items: [], total: 0 },
     map: null,
     marker: null,
     markerKind: null,
@@ -72,7 +93,7 @@
   }
 
   async function api(path, opts = {}) {
-    const res = await fetch(path, opts);
+    const res = await fetch(path, { ...opts, headers: { ...(opts.headers || {}), "X-Device-Id": DEVICE_ID } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const d = data.detail;
@@ -299,7 +320,7 @@
       source: S.method === "gps" ? "gps" : S.method === "manual" ? "manual" : "map_pin",
     };
     if (S.method === "gps" && S.pos.accuracy) item.accuracy_m = Math.round(S.pos.accuracy * 10) / 10;
-    if (label) item.device_label = label;
+    if (label) item.author_label = label;
     S.sending = true;
     updateSubmit();
     S.abort = new AbortController();
@@ -315,7 +336,6 @@
         let html = `✓ Принято. ${feedbackText(a)}`;
         if (a.warning === "low_accuracy") html += `<br>⚠ Низкая точность GPS (±${Math.round(item.accuracy_m)} м)`;
         toast(a.warning ? "warn" : "ok", html);
-        addRecent({ id: a.id, t: item.timestamp, source: item.source, cell: a.cell_id, rsrp: item.rsrp_dbm });
         refreshAfterChange();
       } else {
         const rej = r.rejected[0];
@@ -386,11 +406,6 @@
       const n = r.accepted.length;
       const extra = r.summary && r.summary.became_counted ? ` Клеток стало учитываемыми: ${r.summary.became_counted}.` : "";
       toast(n ? "ok" : "err", n ? `✓ Принято ${n} из ${r.rows.length}.${extra}` : "✗ Ни одна строка не принята.");
-      r.accepted.forEach((a) => {
-        const row = r.rows[a.index];
-        const ts = (row.raw.split(",")[3] || "").trim();
-        addRecent({ id: a.id, t: ts, source: "manual", cell: a.cell_id, rsrp: Number(row.raw.split(",")[2]) });
-      });
       S.paste.ok = 0;
       if (n) $("#paste-text").value = "";
       refreshAfterChange();
@@ -404,25 +419,34 @@
 
   // ---------------------------------------------------------------- последние замеры
 
-  function recentList() {
-    return store.get(KEYS.recent, []);
+  /* Список замеров приходит с сервера: общий («Все») или только свои («Мои»). В браузере замеры не хранятся. */
+
+  async function loadList() {
+    const mine = S.list.tab === "mine";
+    try {
+      const r = await api(`/api/field/measurements?limit=${LIST_LIMIT}&mine=${mine}`);
+      if ((S.list.tab === "mine") !== mine) return; // вкладку успели переключить
+      S.list.items = r.items;
+      S.list.total = r.total;
+      renderList();
+    } catch (e) {
+      /* нет сети: остаётся прежний список */
+    }
   }
 
-  function addRecent(item) {
-    const list = recentList();
-    list.unshift(item);
-    store.set(KEYS.recent, list.slice(0, RECENT_MAX));
-    renderRecent();
-  }
-
-  function renderRecent() {
-    const list = recentList();
-    $("#recent-empty").classList.toggle("hidden", list.length > 0);
-    $("#recent").innerHTML = list
+  function renderList() {
+    const L_ = S.list;
+    $("#recent-empty").classList.toggle("hidden", L_.items.length > 0);
+    $("#recent-empty").textContent = L_.tab === "mine" ? "Вы пока ничего не отправляли." : "Пока пусто.";
+    $$("#list-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === L_.tab)));
+    $("#recent").innerHTML = L_.items
       .map((r) => {
         const confirm = S.deleting === r.id;
-        return `<li data-id="${esc(r.id)}"><div class="meta"><b>${num(r.rsrp, 0)} дБм</b> · ${esc(r.cell || "—")}<div class="sub">${esc((r.t || "").replace("T", " ").slice(0, 16))} · ${esc(SOURCE_RU[r.source] || r.source)}</div></div>` +
-          `<button type="button" class="del${confirm ? " confirm" : ""}" data-id="${esc(r.id)}">${confirm ? "Точно удалить?" : "Удалить"}</button></li>`;
+        const who = r.is_mine ? "вы" : r.author_label || `устройство ${(r.device_tag || "").slice(0, 4)}`;
+        const del = r.is_mine
+          ? `<button type="button" class="del${confirm ? " confirm" : ""}" data-id="${esc(r.id)}">${confirm ? "Точно удалить?" : "Удалить"}</button>`
+          : "";
+        return `<li data-id="${esc(r.id)}"><div class="meta"><b>${num(r.rsrp_dbm, 0)} дБм</b> · ${esc(r.cell_id || "—")}<div class="sub">${esc((r.timestamp || "").replace("T", " ").slice(0, 16))} · ${esc(SOURCE_RU[r.source] || r.source)} · ${esc(who)}</div></div>${del}</li>`;
       })
       .join("");
   }
@@ -430,11 +454,11 @@
   async function deleteRecent(id) {
     if (S.deleting !== id) {
       S.deleting = id;
-      renderRecent();
+      renderList();
       setTimeout(() => {
         if (S.deleting === id) {
           S.deleting = null;
-          renderRecent();
+          renderList();
         }
       }, DELETE_CONFIRM_MS);
       return;
@@ -444,15 +468,14 @@
       await api(`/api/field/measurements/${encodeURIComponent(id)}`, { method: "DELETE" });
       toast("ok", "Замер удалён.");
     } catch (e) {
-      if (e.status !== 404) {
+      if (e.status === 403) toast("err", "Можно удалять только свои замеры.");
+      else if (e.status === 404) toast("warn", "Замера уже нет на сервере.");
+      else {
         toast("err", isNetworkError(e) ? "Нет соединения, замер не удалён." : `✗ ${esc(e.message)}`);
-        renderRecent();
+        renderList();
         return;
       }
-      toast("warn", "Замера уже нет на сервере: убрали из списка.");
     }
-    store.set(KEYS.recent, recentList().filter((r) => r.id !== id));
-    renderRecent();
     refreshAfterChange();
   }
 
@@ -477,6 +500,7 @@
       S.cfg = cfg;
       drawCells();
       $("#count").textContent = v.count;
+      loadList();
       if (S.pos && inBoundsLocal(S.pos.lat, S.pos.lon)) scheduleHint();
     } catch (e) {
       /* не критично: счётчик обновится при следующем действии */
@@ -941,6 +965,14 @@
     bindFileTab();
     $("#device-label").value = store.get(KEYS.label, "");
     $("#device-label").addEventListener("input", (ev) => store.set(KEYS.label, ev.target.value));
+    $("#list-tabs").addEventListener("click", (ev) => {
+      const b = ev.target.closest("button[data-tab]");
+      if (!b || b.dataset.tab === S.list.tab) return;
+      S.list.tab = b.dataset.tab;
+      S.list.items = [];
+      renderList();
+      loadList();
+    });
     $("#recent").addEventListener("click", (ev) => {
       const b = ev.target.closest("button.del");
       if (b) deleteRecent(b.dataset.id);
@@ -964,7 +996,8 @@
     bind();
     setRsrp(S.rsrp);
     renderTime();
-    renderRecent();
+    renderList();
+    loadList();
     renderCellInfo(null);
     updateSubmit();
     api("/api/field/version").then((v) => ($("#count").textContent = v.count)).catch(() => {});

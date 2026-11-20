@@ -12,21 +12,31 @@ from api.main import create_app
 from tests.conftest import OPEN_DATA, ROOT
 
 TS = "2026-11-20T22:15:00+06:00"
+DEV_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+DEV_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 EXPECTED = json.loads((OPEN_DATA / "expected.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     db = tmp_path_factory.mktemp("field") / "field.db"
-    with TestClient(create_app(data_dir=OPEN_DATA, field_db_path=db)) as c:
+    with TestClient(
+        create_app(data_dir=OPEN_DATA, field_db_path=db, admin_token="secret"), headers={"X-Device-Id": DEV_A}
+    ) as c:
         yield c
+
+
+@pytest.fixture(scope="module")
+def client_b(client):
+    """Второй пользователь на том же приложении (другой X-Device-Id)."""
+    return TestClient(client.app, headers={"X-Device-Id": DEV_B})
 
 
 @pytest.fixture(autouse=True)
 def _clean(client):
-    client.delete("/api/field/measurements", params={"confirm": "yes"})
+    client.app.state.coverage.field_store.clear()
     yield
-    client.delete("/api/field/measurements", params={"confirm": "yes"})
+    client.app.state.coverage.field_store.clear()
 
 
 @pytest.fixture(scope="module")
@@ -132,10 +142,8 @@ def test_delete_one_404_and_batch_and_clear(client, cell3):
     paste = client.post("/api/field/paste", json={"text": f"{cell3['lat']},{cell3['lon']},-100,{TS}"}).json()
     assert client.delete(f"/api/field/batches/{paste['batch_id']}").json()["deleted"] == 1
     add(client, [item(cell3)])
-    assert client.delete("/api/field/measurements").status_code == 422  # без confirm=yes
-    assert client.delete("/api/field/measurements", params={"confirm": "no"}).status_code == 422
     assert client.get("/api/field/version").json()["count"] == 1
-    assert client.delete("/api/field/measurements", params={"confirm": "yes"}).json()["deleted"] == 1
+    assert client.delete("/api/field/all", headers={"X-Admin-Token": "secret"}).json()["deleted"] == 1
 
 
 def test_cell_lookup(client, cell3):
@@ -229,7 +237,7 @@ def test_mapdata_with_field(client, cell3):
     # кэш по версии: повторный запрос даёт то же самое
     assert client.get("/api/mapdata", params={"include_field": "true"}).json() == d
     # без замеров include_field=true возвращает карту с пустым diff
-    client.delete("/api/field/measurements", params={"confirm": "yes"})
+    client.app.state.coverage.field_store.clear()
     empty = client.get("/api/mapdata", params={"include_field": "true"}).json()
     assert empty["meta"]["field_count"] == 0 and empty["field_diff"]["cells"] == []
 
