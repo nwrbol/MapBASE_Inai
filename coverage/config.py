@@ -92,6 +92,21 @@ class OutputSettings:
 
 
 @dataclass(frozen=True)
+class FieldSettings:
+    """Полевые замеры (форма /field и импорт CSV из инженерных приложений)."""
+
+    accuracy_warn_m: float = 50.0  # хуже этого GPS-точность даёт предупреждение (замер не отклоняется)
+    max_batch: int = 500  # макс. замеров в одном запросе
+    device_label_max: int = 50
+    import_max_bytes: int = 10 * 1024 * 1024
+    import_max_rows: int = 50_000
+    sample_rows: int = 20  # строк в предпросмотре импорта
+    sample_rejected: int = 10  # отклонённых строк в предпросмотре
+    units_median_min: float = -150.0  # медиана столбца RSRP вне [min, 0] -> «похоже, не RSRP в дБм»
+    units_median_max: float = -30.0
+
+
+@dataclass(frozen=True)
 class Settings:
     bounds: BoundsSettings = field(default_factory=BoundsSettings)
     grid: GridSettings = field(default_factory=GridSettings)
@@ -102,6 +117,7 @@ class Settings:
     daynight: DayNightSettings = field(default_factory=DayNightSettings)
     heatmap: HeatmapSettings = field(default_factory=HeatmapSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
+    field_data: FieldSettings = field(default_factory=FieldSettings)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

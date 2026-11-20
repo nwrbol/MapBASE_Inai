@@ -58,3 +58,14 @@ output:
   scenario_file: scenario.json   # пишется только если заданы ограничения (--exclude/--require/--constraints)
   coord_decimals: 6
   rsrp_decimals: 4
+
+field_data:                  # полевые замеры (/field) и импорт CSV; result.json от них не зависит
+  accuracy_warn_m: 50        # GPS хуже ±50 м: замер принимается с предупреждением low_accuracy
+  max_batch: 500             # замеров в одном запросе
+  device_label_max: 50
+  import_max_bytes: 10485760 # 10 МБ
+  import_max_rows: 50000
+  sample_rows: 20
+  sample_rejected: 10
+  units_median_min: -150     # медиана столбца RSRP вне [-150, -30] или > 0: «похоже, не RSRP в дБм»
+  units_median_max: -30

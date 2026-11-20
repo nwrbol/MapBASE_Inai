@@ -57,10 +57,30 @@ def in_bounds(lat: pd.Series, lon: pd.Series, settings: Settings) -> np.ndarray:
         return (lat_a > b.lat_min) & (lat_a < b.lat_max) & (lon_a > b.lon_min) & (lon_a < b.lon_max)
 
 
-def clean_measurements(
-    frame: pd.DataFrame, malformed: np.ndarray, settings: Settings
-) -> tuple[pd.DataFrame, CleaningReport]:
-    """Возвращает очищенные замеры (lat, lon, rsrp_dbm, timestamp, ts_utc, row) и отчёт."""
+@dataclass
+class RowVerdict:
+    """Результат классификации строк: первая сработавшая причина отбрасывания ("" — строка годна)."""
+
+    reasons: np.ndarray
+    lat: pd.Series
+    lon: pd.Series
+    rsrp: pd.Series
+    ts: pd.Series
+    norm: pd.DataFrame
+
+    @property
+    def alive(self) -> np.ndarray:
+        return self.reasons == ""
+
+    def count(self, reason: str) -> int:
+        return int((self.reasons == reason).sum())
+
+
+def classify_rows(frame: pd.DataFrame, malformed: np.ndarray, settings: Settings) -> RowVerdict:
+    """Единственный источник правил очистки: и CSV-замеры, и полевые замеры проходят через эту функцию.
+
+    Каждая строка получает первую сработавшую причину (порядок задан в REASONS).
+    """
     c = settings.cleaning
     total = len(frame)
     lat = to_number(frame["lat"])
@@ -68,26 +88,20 @@ def clean_measurements(
     rsrp = to_number(frame["rsrp_dbm"])
     ts = parse_timestamps(frame["timestamp"], settings.daynight.timezone, c.accept_unix_epoch)
 
-    alive = ~malformed.copy()
-    counts: dict[str, int] = {}
+    reasons = np.full(total, "", dtype=object)
 
-    def drop(reason: str, bad: np.ndarray) -> None:
-        nonlocal alive
-        hit = alive & bad
-        counts[reason] = int(hit.sum())
-        alive = alive & ~bad
+    def mark(reason: str, bad: np.ndarray) -> None:
+        reasons[(reasons == "") & bad] = reason
 
-    counts["malformed"] = int(malformed.sum())
+    mark("malformed", np.asarray(malformed, dtype=bool))
     finite = np.isfinite(lat.to_numpy()) & np.isfinite(lon.to_numpy()) & np.isfinite(rsrp.to_numpy())
-    drop("unparseable", ~finite)
+    mark("unparseable", ~finite)
     if c.require_valid_timestamp:
-        drop("bad_timestamp", ts.isna().to_numpy())
-    else:
-        counts["bad_timestamp"] = 0
+        mark("bad_timestamp", ts.isna().to_numpy())
     with np.errstate(invalid="ignore"):
         r = rsrp.to_numpy()
-        drop("rsrp_out_of_range", ~((r >= c.rsrp_min) & (r <= c.rsrp_max)))
-    drop("out_of_bounds", ~in_bounds(lat, lon, settings))
+        mark("rsrp_out_of_range", ~((r >= c.rsrp_min) & (r <= c.rsrp_max)))
+    mark("out_of_bounds", ~in_bounds(lat, lon, settings))
 
     norm = pd.DataFrame(
         {
@@ -97,10 +111,23 @@ def clean_measurements(
             "timestamp": _timestamp_key(frame["timestamp"], ts, c.dedup_timestamp_mode),
         }
     )
-    valid_idx = np.flatnonzero(alive)
+    valid_idx = np.flatnonzero(reasons == "")
     dup_mask = np.zeros(total, dtype=bool)
     dup_mask[valid_idx] = norm.iloc[valid_idx].duplicated(subset=list(c.dedup_subset), keep="first").to_numpy()
-    drop("duplicates", dup_mask)
+    mark("duplicates", dup_mask)
+    return RowVerdict(reasons=reasons, lat=lat, lon=lon, rsrp=rsrp, ts=ts, norm=norm)
+
+
+def clean_measurements(
+    frame: pd.DataFrame, malformed: np.ndarray, settings: Settings
+) -> tuple[pd.DataFrame, CleaningReport]:
+    """Возвращает очищенные замеры (lat, lon, rsrp_dbm, timestamp, ts_utc, row) и отчёт."""
+    total = len(frame)
+    v = classify_rows(frame, malformed, settings)
+    lat, lon, rsrp, ts, norm = v.lat, v.lon, v.rsrp, v.ts, v.norm
+    alive = v.alive
+    counts = {reason: v.count(reason) for reason in REASONS}
+    valid_idx = np.flatnonzero(alive)
 
     alt = {
         "raw_full_row": int(frame[~malformed].duplicated().sum()),

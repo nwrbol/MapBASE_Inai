@@ -102,6 +102,30 @@ def run_pipeline(inputs: Inputs, settings: Settings, overrides: dict | None = No
     clean, creport = clean_measurements(frame, malformed, settings)
     t = lap("cleaning", t)
 
+    return analyze_clean(clean, creport, towers, cands, settings, bounds_source, timings, t0, t)
+
+
+def analyze_clean(
+    clean: pd.DataFrame,
+    creport: CleaningReport,
+    towers: pd.DataFrame,
+    cands: pd.DataFrame,
+    settings: Settings,
+    bounds_source: str,
+    timings: dict[str, float],
+    t0: float,
+    t: float,
+) -> PipelineResult:
+    """Всё после очистки: сетка, выбор площадок, день/ночь, result и report.
+
+    Общая часть для run_pipeline (исходные замеры) и run_pipeline_with_field (исходные + полевые).
+    """
+
+    def lap(name: str, since: float) -> float:
+        now = time.perf_counter()
+        timings[name] = round((now - since) * 1000, 3)
+        return now
+
     clean = assign_cells(clean, settings)
     grid = build_grid(clean, settings)
     worst = worst_cells(grid, settings.worst.count)
