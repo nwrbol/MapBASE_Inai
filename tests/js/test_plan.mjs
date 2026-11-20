@@ -117,5 +117,5 @@ test("result_selected: ошибки как в Python", () => {
   assert.throws(() => S.buildSelectedResult(data, ["A", "A"]), /две разные/);
   assert.throws(() => S.buildSelectedResult(data, ["A"]), /две разные/);
   assert.throws(() => S.buildSelectedResult(data, ["A", "ZZ"]), /ZZ неизвестна/);
-  assert.throws(() => S.buildSelectedResult(data, ["E", "A"]), /E недопустима по ТЗ: 100 м до T1 \(< 500 м\)/);
+  assert.throws(() => S.buildSelectedResult(data, ["E", "A"]), /E недопустима: 100 м до T1 \(ближе 500 м к БС\)/);
 });

@@ -192,7 +192,7 @@ def _validate(s: Settings) -> None:
     if s.bounds.lat_min > s.bounds.lat_max or s.bounds.lon_min > s.bounds.lon_max:
         raise ConfigError("bounds: min больше max")
     if s.selection.pair_size != 2:
-        raise ConfigError("selection.pair_size: поддерживается только 2 площадки (как в ТЗ)")
+        raise ConfigError("selection.pair_size: поддерживается только пара площадок (2)")
     bad = set(s.cleaning.dedup_subset) - _DEDUP_COLUMNS
     if bad or not s.cleaning.dedup_subset:
         raise ConfigError(f"cleaning.dedup_subset: допустимы столбцы {sorted(_DEDUP_COLUMNS)}")

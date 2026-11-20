@@ -71,7 +71,7 @@ def create_app(
             app.state.coverage.field_store.close()
 
     app = FastAPI(
-        title="Карта покрытия — ТЗ 7",
+        title="Карта покрытия",
         version=__version__,
         description="Очистка замеров RSRP, сетка 200 м, выбор двух площадок для новой БС.",
         lifespan=lifespan,

@@ -224,7 +224,7 @@ def evaluate_pair(covers: Covers, a: str, b: str, optimum_cells: frozenset[str] 
     """Оценка любой пары допустимых площадок (в том числе исключённых пользователем)."""
     for cid in (a, b):
         if cid not in covers:
-            raise ScenarioError(f"площадка {cid} неизвестна или недопустима по ТЗ")
+            raise ScenarioError(f"площадка {cid} неизвестна или недопустима")
     if a == b:
         raise ScenarioError("нужны две разные площадки")
     first, second = sorted((a, b))

@@ -18,7 +18,7 @@
     { key: "cands", defaultOn: true, label: () => "Кандидаты (✕ отказ, 🔒 фиксация)" },
     { key: "chosen", defaultOn: true, label: (c) => `Выбранная пара + ${c.radiusKm} км` },
     // слои сценариев: пустые, пока нет ограничений; включены, как и раньше
-    { key: "ghost", defaultOn: true, label: () => "Оптимум по ТЗ (призрак)" },
+    { key: "ghost", defaultOn: true, label: () => "Оптимальная пара (контур)" },
     { key: "lost", defaultOn: true, label: () => "Потерянные клетки" },
     { key: "gained", defaultOn: false, label: () => "Новые клетки" },
     { key: "covered", defaultOn: true, label: () => "Покрытые красные клетки" },

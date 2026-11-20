@@ -21,7 +21,7 @@
   const inter = (a, b) => new Set([...a].filter((x) => b.has(x)));
   const union = (a, b) => new Set([...a, ...b]);
 
-  /** id допустимых по ТЗ кандидата -> Set красных клеток в радиусе покрытия. */
+  /** id допустимых кандидатов -> Set красных клеток в радиусе покрытия. */
   function coversOf(data) {
     const out = new Map();
     data.candidates.forEach((c) => {
@@ -76,7 +76,7 @@
 
   function evaluatePair(covers, a, b, optCells) {
     [a, b].forEach((id) => {
-      if (!covers.has(id)) throw new ScenarioError(`площадка ${id} неизвестна или недопустима по ТЗ`);
+      if (!covers.has(id)) throw new ScenarioError(`площадка ${id} неизвестна или недопустима`);
     });
     if (a === b) throw new ScenarioError("нужны две разные площадки");
     const [p, q] = sortedArr([a, b]);
@@ -216,7 +216,7 @@
   const samePairArr = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
 
   function planLabel(source, excluded, required) {
-    if (source === "tz") return "по ТЗ, оптимум";
+    if (source === "tz") return "оптимальная";
     if (source === "selected") return "ваш выбор";
     const ex = (excluded || []).map((r) => r.id);
     const req = required || [];
@@ -228,7 +228,7 @@
    * Текущий план: какая пара сейчас «принята» пользователем. Предпросмотр планом не считается.
    * state = {selected, result, excluded:[{id}], required:[id]}; data = данные карты.
    * Возвращает {pair, covered, delta, source, label, violates, tzPair, tzCovered, message?, pending?}
-   *   source: "tz" | "constraints" | "selected". Δ считается к паре по ТЗ (при полевых замерах: к оптимуму карты).
+   *   source: "tz" | "constraints" | "selected". Δ считается к оптимальной паре (при полевых замерах: к оптимуму карты).
    */
   function currentPlan(state, data) {
     const excluded = state.excluded || [];
@@ -265,7 +265,7 @@
     return { ...common, pair: tzPair, covered: tzCovered, delta: 0, source: "tz", label: planLabel("tz") };
   }
 
-  /** План отличается от пары по ТЗ (для строки «По ТЗ…» и кнопки «Скачать мой выбор»). */
+  /** План отличается от оптимальной пары (для строки «Оптимальная пара» и кнопки «Скачать мой выбор»). */
   const planDiffersFromTz = (plan) => plan.source !== "tz" && !!plan.pair && !samePairArr(plan.pair, plan.tzPair);
 
   /** Тот же результат, что build_selected_result в Python: ровно 4 ключа, покрытие по исходным данным карты. */
@@ -279,9 +279,9 @@
       if (!c) throw new ScenarioError(`площадка ${id} неизвестна`);
       if (!c.admissible) {
         if (c.nearest_tower != null && c.nearest_tower_m != null && excl != null) {
-          throw new ScenarioError(`${id} недопустима по ТЗ: ${Math.round(c.nearest_tower_m)} м до ${c.nearest_tower} (< ${excl} м)`);
+          throw new ScenarioError(`${id} недопустима: ${Math.round(c.nearest_tower_m)} м до ${c.nearest_tower} (ближе ${excl} м к БС)`);
         }
-        throw new ScenarioError(`${id} недопустима по ТЗ: ${c.reason}`);
+        throw new ScenarioError(`${id} недопустима: ${c.reason}`);
       }
     });
     const [a, b] = sortedArr(pair);

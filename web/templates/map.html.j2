@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="version" content="{{ version }}">
 <title>Карта покрытия</title>
 {% if inline %}
 <style>{{ assets.leaflet_css | safe }}</style>
@@ -27,7 +28,6 @@
     <header class="panel-head">
       <button type="button" id="sheet-handle" class="sheet-handle" aria-label="Шторка с данными: нажмите или перетащите" aria-expanded="false"><span></span></button>
       <h1>{{ "Анализ покрытия" if server_mode else "Карта покрытия" }}</h1>
-      <p class="sub">ТЗ 7 · INAI 2026 · v{{ version }} · <span id="mode-label">{{ 'веб-режим' if server_mode else 'автономный файл' }}</span></p>
       <button id="panel-toggle" class="icon-btn" aria-label="Свернуть панель" title="Свернуть панель">⟨</button>
       <div class="sheet-summary" id="sheet-summary" aria-live="polite"><b id="ss-pair">—</b><span id="ss-cov"></span><span id="ss-drop"></span><button type="button" id="sheet-open" aria-controls="panel-navigation">Разделы ↑</button></div>
     </header>
@@ -50,13 +50,13 @@
             <div class="kpi"><span class="kpi-v" id="k-dropped">—</span><span class="kpi-l">строк отброшено</span></div>
           </div>
           <p id="k-message" class="sc-message hidden" role="status"></p>
-          <p id="k-tz" class="small hidden">По ТЗ (в result.json для жюри): <b id="k-tz-pair">—</b> · <span id="k-tz-covered"></span></p>
+          <p id="k-tz" class="small hidden">Оптимальная пара: <b id="k-tz-pair">—</b> · <span id="k-tz-covered"></span></p>
           <div class="btn-row">
-            <button id="k-reset" class="btn hidden" type="button">Вернуть пару по ТЗ</button>
+            <button id="k-reset" class="btn hidden" type="button">Вернуть оптимальную пару</button>
           </div>
           <div class="btn-row">
-            <button id="dl-result" class="btn" type="button" title="Официальный результат по ТЗ: его проверяет автопроверка жюри">Скачать result.json (по ТЗ)</button>
-            <button id="dl-selected" class="btn" type="button" disabled title="Тот же формат, что result.json, но с вашей парой. Автопроверка жюри использует result.json по ТЗ">Скачать мой выбор</button>
+            <button id="dl-result" class="btn" type="button" title="Итоги расчёта с оптимальной парой">Скачать result.json</button>
+            <button id="dl-selected" class="btn" type="button" disabled title="Тот же формат, что result.json, с выбранной вами парой">Скачать мой выбор</button>
             <button id="dl-map" class="btn" type="button">Скачать map.html</button>
           </div>
         </section>
@@ -88,7 +88,6 @@
         <section class="card" id="scenario-card">
           <h2>Сценарий <span class="muted small">а если владелец против?</span></h2>
           <div id="sc-cards" class="sc-cards"></div>
-          <p id="sc-notice" class="sc-notice hidden">Сценарий отличается от result.json. Для автопроверки используется оптимум по ТЗ.</p>
           <p id="sc-message" class="sc-message hidden" role="alert"></p>
           <div id="sc-replacements"></div>
           <div id="sc-ties"></div>
@@ -126,7 +125,6 @@
             <thead><tr><th>id</th><th>статус площадки</th><th>до БС, м</th><th>красных</th><th title="насколько хуже станет лучшая пара, если откажет именно эта площадка">потеря при отказе</th></tr></thead>
             <tbody></tbody>
           </table>
-          <p class="muted small">«Отказ»: пересчёт без площадки (укажите причину). «Зафикс.»: площадка уже согласована, подбирается партнёр. Зафиксировать можно не больше двух.</p>
         </section>
 
       </div>

@@ -23,9 +23,7 @@ log = logging.getLogger("coverage")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="ТЗ 7 «Карта покрытия»: очистка замеров, сетка 200 м, выбор двух площадок для БС."
-    )
+    p = argparse.ArgumentParser(description="Карта покрытия: очистка замеров, сетка 200 м, выбор двух площадок для БС.")
     p.add_argument("--data-dir", default=str(ROOT / "data"), help="каталог с measurements/towers/candidates.csv")
     p.add_argument("--measurements", help="путь к measurements.csv (перекрывает --data-dir)")
     p.add_argument("--towers", help="путь к towers.csv")
@@ -54,7 +52,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--pair",
         metavar="A,B",
         help="пара площадок пользователя: дополнительно пишет result_selected.json (формат result.json); "
-        "result.json остаётся по ТЗ",
+        "result.json остаётся с оптимальной парой",
     )
     p.add_argument(
         "--include-field",
@@ -146,7 +144,7 @@ def selected_summary(pr: PipelineResult, selected: dict, filename: str) -> str:
     pair, covered = selected["best_candidates"], selected["covered_weak_cells"]
     tz = pr.result
     return (
-        f"Selected pair: {' + '.join(pair)} -> {covered} (TZ optimum {' + '.join(tz['best_candidates'])} -> "
+        f"Selected pair: {' + '.join(pair)} -> {covered} (optimum {' + '.join(tz['best_candidates'])} -> "
         f"{tz['covered_weak_cells']}, delta {covered - tz['covered_weak_cells']:+d}); written {filename}"
     )
 

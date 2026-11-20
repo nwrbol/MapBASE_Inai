@@ -1,4 +1,4 @@
-"""Сборка result.json (ровно 4 ключа ТЗ) и подробного report.json."""
+"""Сборка result.json (ровно 4 ключа) и подробного report.json."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def build_selected_result(pr: Any, pair: tuple[str, str] | list[str]) -> dict:
     """result_selected.json: тот же формат, что result.json (ровно 4 ключа), но с парой пользователя.
 
     worst_cells и dropped_rows берутся из официального результата, покрытие считается по исходным данным
-    (pr: PipelineResult). Официальный result.json это не меняет и автопроверкой не используется.
+    (pr: PipelineResult). Итоги расчёта в result.json это не меняет.
     """
     from .errors import ScenarioError
 
@@ -95,9 +95,9 @@ def build_selected_result(pr: Any, pair: tuple[str, str] | list[str]) -> dict:
         if not c.admissible:
             if c.nearest_tower is not None and c.nearest_tower_m is not None:
                 raise ScenarioError(
-                    f"{cid} недопустима по ТЗ: {c.nearest_tower_m:.0f} м до {c.nearest_tower} (< {limit:g} м)"
+                    f"{cid} недопустима: {c.nearest_tower_m:.0f} м до {c.nearest_tower} (ближе {limit:g} м к БС)"
                 )
-            raise ScenarioError(f"{cid} недопустима по ТЗ: {c.reason}")
+            raise ScenarioError(f"{cid} недопустима: {c.reason}")
     first, second = sorted((a, b))
     covered = len(info[first].covers | info[second].covers)
     return build_result(pr.result["worst_cells"], [first, second], pr.result["dropped_rows"], covered)

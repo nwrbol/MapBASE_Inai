@@ -146,7 +146,7 @@ def health() -> Health:
 
 @router.get("/api/result", response_model=ResultModel)
 def get_result(request: Request) -> dict:
-    """Официальный результат по ТЗ (его проверяет автопроверка). Параметр pair не принимается и игнорируется."""
+    """Итоги расчёта: худшие клетки, оптимальная пара, число отброшенных строк, покрытие. Параметр pair не принимается."""
     return _default(request).pr.result
 
 
@@ -154,7 +154,7 @@ def get_result(request: Request) -> dict:
 def get_result_selected(request: Request, pair: str, analysis_id: str | None = None) -> dict:
     """Результат для пары пользователя (?pair=C08,C11): тот же формат, что result.json.
 
-    Не используется автопроверкой; официальный результат — /api/result.
+    Пара должна состоять из двух разных допустимых площадок.
     """
     return build_selected_result(_pick(request, analysis_id).pr, parse_pair(pair))
 
@@ -277,7 +277,7 @@ async def analyze(
 
 @router.get("/api/download/result.json")
 def download_result(request: Request, analysis_id: str | None = None) -> Response:
-    """Официальный result.json по ТЗ вложением. Параметр pair не принимается и игнорируется."""
+    """result.json вложением (оптимальная пара). Параметр pair не принимается."""
     a = _pick(request, analysis_id)
     return Response(
         dumps(a.pr.result),
@@ -288,7 +288,7 @@ def download_result(request: Request, analysis_id: str | None = None) -> Respons
 
 @router.get("/api/download/result_selected.json", tags=["scenario"])
 def download_result_selected(request: Request, pair: str, analysis_id: str | None = None) -> Response:
-    """result_selected.json для пары пользователя вложением. Не используется автопроверкой; официальный результат — /api/result."""
+    """result_selected.json вложением: тот же формат, что result.json, с заданной парой."""
     data = build_selected_result(_pick(request, analysis_id).pr, parse_pair(pair))
     return Response(
         dumps(data),

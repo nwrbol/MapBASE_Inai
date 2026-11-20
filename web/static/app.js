@@ -437,7 +437,7 @@
     if (sec.towers) mainRows.push(row(lineSwatch("2px dashed var(--text)"), `запрет ${m.tower_exclusion_m} м от БС`));
     if (sec.chosen) mainRows.push(row(glyph("★", "#059669"), `выбранная площадка, круг ${m.coverage_radius_m / 1000} км`));
     if (sec.cands) mainRows.push(row(glyph("✕", "#b91c1c"), "отказ · 🔒 зафиксирована"));
-    if (sec.ghost) mainRows.push(row(lineSwatch("2px dashed #6b7280"), "оптимум по ТЗ («призрак»)"));
+    if (sec.ghost) mainRows.push(row(lineSwatch("2px dashed #6b7280"), "оптимальная пара (контур)"));
     if (sec.lost) mainRows.push(row(swatch("rgba(124,58,237,.35)", "#7c3aed"), "потерянные клетки"));
     if (sec.gained) mainRows.push(row(swatch("rgba(8,145,178,.35)", "#0891b2"), "новые клетки"));
     if (sec.field) mainRows.push(row(glyph("◆●■▲"), "полевые: метка · GPS · вручную · импорт"));
@@ -537,7 +537,6 @@
         `<p>Сравнение по ${dn.common_cells} из ${d.stats.cells_counted} клеток; в остальных &lt; ${d.meta.min_samples} замеров днём или ночью.</p>` +
         `<p>Общих клеток: ${dn.common_cells}; медиана Δ (ночь − день): <b>${fmt(dn.median_delta_db, 2)} дБ</b>. ` +
         `Красные только ночью: ${dn.red_only_night.length}, только днём: ${dn.red_only_day.length}.</p>` +
-        `<p class="muted">Окно дня: ${esc(dn.window)}. Слои «День», «Ночь», «Δ» — в переключателе.</p>` +
         `<p class="muted">Цвета слоя «Δ» (ночь − день):</p>` +
         CL.deltaLegendItems(d.meta.daynight_delta_bins).map((i) => `<div class="lg-row"><i class="sw" style="background:${i.color}"></i>${esc(i.text)}</div>`).join("");
     }
@@ -724,7 +723,7 @@
       }
       required.push(id);
     });
-    // выбранная пара: обе площадки известны и допустимы по ТЗ, не в отказе, включает все зафиксированные
+    // выбранная пара: обе площадки известны и допустимы (не ближе 500 м к БС), не в отказе, включает все зафиксированные
     let selected = null;
     let selectedNote = "";
     const rawSel = Array.isArray(raw.selected) ? raw.selected.map(String) : [];
@@ -947,13 +946,13 @@
           `<button type="button" data-act="status" data-id="${esc(c.id)}" data-st="${key}" class="${st === key ? "on" : ""}" aria-pressed="${st === key}" title="${esc(title)}"${disabled ? " disabled" : ""}>${label}</button>`;
         seg =
           `<span class="seg" role="group" aria-label="Статус площадки ${esc(c.id)}">` +
-          btn("available", "Доступна", "Площадка доступна", false) +
-          btn("excluded", "Отказ", "Отказ: пересчёт без этой площадки", false) +
-          btn("required", "Зафикс.", full && st !== "required" ? "Уже зафиксированы две площадки" : "Зафиксирована: подбирается партнёр", full && st !== "required") +
+          btn("available", "Доступна", "Площадка участвует в подборе", false) +
+          btn("excluded", "Отказ", "Исключить площадку из подбора (можно указать причину)", false) +
+          btn("required", "Зафикс.", full && st !== "required" ? "Зафиксировать можно не больше двух площадок" : "Площадка согласована: подобрать к ней пару", full && st !== "required") +
           `</span>`;
       } else {
-        const tip = `исключена по ТЗ: ${fmt(c.nearest_tower_m, 0)} м до ${c.nearest_tower}`;
-        seg = `<span class="seg" title="${esc(tip)}"><button type="button" disabled data-st="available">Доступна</button><button type="button" disabled data-st="excluded">Отказ</button><button type="button" disabled data-st="required">Зафикс.</button></span> <span class="tag no" title="${esc(tip)}">по ТЗ</span>`;
+        const tip = `недопустима: ${fmt(c.nearest_tower_m, 0)} м до ${c.nearest_tower} (ближе ${current.meta.tower_exclusion_m} м к БС)`;
+        seg = `<span class="seg" title="${esc(tip)}"><button type="button" disabled data-st="available">Доступна</button><button type="button" disabled data-st="excluded">Отказ</button><button type="button" disabled data-st="required">Зафикс.</button></span> <span class="tag no" title="${esc(tip)}">недопустима</span>`;
       }
       const v = impact && c.admissible ? impact[c.id] : undefined;
       const loss = v === undefined ? "—" : v < 0 ? MINUS + Math.abs(v) : "0";
@@ -1031,9 +1030,8 @@
       card2 = `<div class="sc-card infeasible"><div class="sc-t">С учётом отказов</div><div class="sc-pair">—</div><div class="sc-sub">пара не найдена</div></div>`;
     }
     $("#sc-cards").innerHTML =
-      `<div class="sc-card"><div class="sc-t">${current.meta.field_included ? "Оптимум с полевыми" : "Оптимум по ТЗ"}</div><div class="sc-pair">${esc(pairText(opt.pair))}</div><div class="sc-n">${opt.covered} красных клеток</div><div class="sc-sub">${current.meta.field_included ? "с учётом полевых замеров; result.json: " + esc(current.result.best_candidates.join(" + ")) : "это значение в result.json"}</div></div>` + card2;
+      `<div class="sc-card"><div class="sc-t">${current.meta.field_included ? "Оптимум с полевыми замерами" : "Оптимум"}</div><div class="sc-pair">${esc(pairText(opt.pair))}</div><div class="sc-n">${opt.covered} красных клеток</div><div class="sc-sub">${current.meta.field_included ? "с учётом полевых замеров; result.json: " + esc(current.result.best_candidates.join(" + ")) : "это значение в result.json"}</div></div>` + card2;
 
-    $("#sc-notice").classList.toggle("hidden", !cons);
     const msg = $("#sc-message");
     if (!r.feasible) {
       msg.textContent = r.message || "Сценарий невыполним.";
@@ -1127,7 +1125,7 @@
     });
   }
 
-  // ---- «Обзор»: текущий план (выбор пользователя, ограничения или пара по ТЗ) -----------------------------------
+  // ---- «Обзор»: текущий план (выбор пользователя, ограничения или оптимальная пара) -----------------------------------
 
   const planNow = () =>
     SC.currentPlan({ selected: scenario.selected, result: scenario.result, excluded: scenario.excluded, required: scenario.required }, current);
@@ -1153,7 +1151,7 @@
     msg.textContent = text;
     msg.classList.toggle("hidden", !text);
 
-    // пара по ТЗ: показываем, только если текущий план от неё отличается
+    // оптимальная пара: показываем, только если текущий план от неё отличается
     const showTz = differs || (notTz && !plan.pair && !plan.pending);
     $("#k-tz").classList.toggle("hidden", !showTz);
     $("#k-tz-pair").textContent = pairText(plan.tzPair);
@@ -1190,7 +1188,7 @@
   }
 
   function resetToTz() {
-    /* Сброс ограничений, выбора, ручного режима и предпросмотра: «Итог» снова показывает пару по ТЗ. */
+    /* Сброс ограничений, выбора, ручного режима и предпросмотра: «Итог» снова показывает оптимальную пару. */
     scenario.excluded = [];
     scenario.required = [];
     scenario.selected = null;
@@ -1259,7 +1257,7 @@
     const v = impact && c.admissible ? impact[c.id] : undefined;
     let h =
       `<b>Площадка ${esc(c.id)}</b><br>` +
-      (c.admissible ? "допустима" : `исключена по ТЗ: ${esc(c.reason)}`) +
+      (c.admissible ? "допустима" : `недопустима: ${esc(c.reason)}`) +
       `<br>ближайшая БС: ${esc(c.nearest_tower ?? "—")} (${fmt(c.nearest_tower_m, 0)} м)` +
       `<br>покрывает красных: ${c.covers_red}`;
     if (ref) h += `<br><b style="color:#b91c1c">отказ:</b> ${esc(CATEGORY_RU[ref.category])}${ref.reason ? ": " + esc(ref.reason) : ""}`;
@@ -1296,11 +1294,11 @@
       });
       info.lost_vs_optimum.forEach((id) => {
         const c = cache.cellById[id];
-        if (c) rect(c.b, { color: "#7c3aed", weight: 2, dashArray: "4 3", fillColor: "#7c3aed", fillOpacity: 0.28 }).bindInfo(`<b>${esc(c.id)}</b><br>потеряна: покрывал оптимум по ТЗ, эта пара нет`).addTo(groups.lost);
+        if (c) rect(c.b, { color: "#7c3aed", weight: 2, dashArray: "4 3", fillColor: "#7c3aed", fillOpacity: 0.28 }).bindInfo(`<b>${esc(c.id)}</b><br>потеряна: её покрывала оптимальная пара`).addTo(groups.lost);
       });
       info.gained_vs_optimum.forEach((id) => {
         const c = cache.cellById[id];
-        if (c) rect(c.b, { color: "#0891b2", weight: 2, dashArray: "4 3", fillColor: "#0891b2", fillOpacity: 0.28 }).bindInfo(`<b>${esc(c.id)}</b><br>новая: оптимум по ТЗ её не покрывал`).addTo(groups.gained);
+        if (c) rect(c.b, { color: "#0891b2", weight: 2, dashArray: "4 3", fillColor: "#0891b2", fillOpacity: 0.28 }).bindInfo(`<b>${esc(c.id)}</b><br>новая: оптимальная пара её не покрывала`).addTo(groups.gained);
       });
     }
 
@@ -1311,7 +1309,7 @@
       .forEach((c) => {
         L.circle([c.lat, c.lon], { radius: m.coverage_radius_m, color: "#6b7280", weight: 2, dashArray: "8 6", fill: false, interactive: false }).addTo(groups.ghost);
         L.circleMarker([c.lat, c.lon], { radius: 3, color: "#6b7280", fillColor: "#6b7280", fillOpacity: 1, interactive: false })
-          .bindTooltip(`оптимум по ТЗ: ${c.id}`, { permanent: true, direction: "bottom", offset: [0, 6] })
+          .bindTooltip(`оптимум: ${c.id}`, { permanent: true, direction: "bottom", offset: [0, 6] })
           .addTo(groups.ghost);
       });
 
@@ -1375,7 +1373,7 @@
     const c = current.candidates.find((x) => x.id === id);
     if (!c) return;
     if (!c.admissible) {
-      scenario.manualResult = { note: `${id}: площадка исключена по ТЗ (${fmt(c.nearest_tower_m, 0)} м до ${c.nearest_tower}), оценить нельзя.` };
+      scenario.manualResult = { note: `${id}: площадка недопустима (${fmt(c.nearest_tower_m, 0)} м до ${c.nearest_tower}, ближе ${current.meta.tower_exclusion_m} м к БС), оценить нельзя.` };
       return renderManualCard();
     }
     if (scenario.manualPick.length === 0 || scenario.manualPick.length === 2) {

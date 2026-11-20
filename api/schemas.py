@@ -17,7 +17,7 @@ class WorstCell(BaseModel):
 
 
 class ResultModel(BaseModel):
-    """Строго 4 ключа ТЗ. worst_cells может быть в другом формате, если так задано в config.yaml."""
+    """Ровно 4 ключа result.json. worst_cells может быть в другом формате, если так задано в config.yaml."""
 
     worst_cells: list[WorstCell] | list[str] | list[list[float]]
     best_candidates: list[str]

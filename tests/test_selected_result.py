@@ -78,7 +78,7 @@ def test_selected_equals_official_for_tz_pair(pr):
 @pytest.mark.parametrize(
     ("pair", "text"),
     [
-        ("C01,C09", "C01 недопустима по ТЗ: 0 м до B01 (< 500 м)"),
+        ("C01,C09", "C01 недопустима: 0 м до B01 (ближе 500 м к БС)"),
         ("C09,C09", "две разные"),
         ("C99,C09", "C99 неизвестна"),
         ("C09", "нужны две площадки"),
@@ -147,8 +147,7 @@ def test_cli_pair_writes_both_files(tmp_path):
     sel = json.loads((tmp_path / "result_selected.json").read_text(encoding="utf-8"))
     assert sel["best_candidates"] == ["C08", "C11"] and sel["covered_weak_cells"] == 108
     assert (
-        "Selected pair: C08 + C11 -> 108 (TZ optimum C09 + C14 -> 111, delta -3); written result_selected.json"
-        in r.stdout
+        "Selected pair: C08 + C11 -> 108 (optimum C09 + C14 -> 111, delta -3); written result_selected.json" in r.stdout
     )
 
 
