@@ -12,12 +12,25 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from coverage.config import Settings, load_settings
-from coverage.errors import DataValidationError
+from coverage.errors import DataValidationError, ScenarioError
 from coverage.pipeline import Inputs, PipelineResult, run_pipeline
 from coverage.render import build_map_data, render_page
 from coverage.result import dumps, to_jsonable
+from coverage.scenario import Constraints, Refusal, evaluate_manual, impact_of_refusals, run_scenario
 
-from .schemas import AnalyzeResponse, CandidateModel, CompareModel, Health, ResultModel, TowerModel
+from .schemas import (
+    AnalyzeResponse,
+    CandidateModel,
+    CompareModel,
+    EvaluateRequest,
+    EvaluateResponse,
+    Health,
+    RefusalIn,
+    ResultModel,
+    ScenarioRequest,
+    ScenarioResponse,
+    TowerModel,
+)
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_STORED_ANALYSES = 16
@@ -230,4 +243,50 @@ def download_map(request: Request, analysis_id: str | None = None) -> Response:
         a.html,
         media_type="text/html; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="map.html"'},
+    )
+
+
+# --- сценарии отказов: сервер без состояния, ограничения приходят в каждом запросе ----------------
+
+
+def _constraints(excluded: list[RefusalIn], required: list[str], analysis: Analysis) -> Constraints:
+    if len(excluded) > len(analysis.pr.candidates):
+        raise ScenarioError(f"отказов больше, чем площадок ({len(analysis.pr.candidates)})")
+    return Constraints(
+        excluded=tuple(Refusal(r.id, r.reason, r.category) for r in excluded),
+        required=tuple(required),
+    )
+
+
+@router.post("/api/scenario", response_model=ScenarioResponse, response_model_exclude_unset=True, tags=["scenario"])
+def post_scenario(request: Request, body: ScenarioRequest) -> dict:
+    """Пересчёт пары с учётом отказов и фиксаций. result.json и /api/result не меняются."""
+    a = _pick(request, body.analysis_id)
+    return run_scenario(a.pr, _constraints(body.excluded, body.required, a), body.top_n).to_dict()
+
+
+@router.post("/api/scenario/evaluate", response_model=EvaluateResponse, tags=["scenario"])
+def post_evaluate(request: Request, body: EvaluateRequest) -> dict:
+    """Ручная оценка любой пары допустимых площадок (даже исключённых: «что было бы»)."""
+    a = _pick(request, body.analysis_id)
+    cons = _constraints(body.excluded, body.required, a)
+    return evaluate_manual(a.pr, body.pair[0], body.pair[1], cons)
+
+
+@router.get("/api/candidates/impact", response_model=dict[str, int], tags=["scenario"])
+def get_impact(request: Request, analysis_id: str | None = None) -> dict[str, int]:
+    """Потеря покрытия, если откажет именно эта площадка (≤ 0)."""
+    a = _pick(request, analysis_id)
+    covers = {c.id: c.covers for c in a.pr.candidates if c.admissible}
+    return impact_of_refusals(covers, a.pr.brute.covered)
+
+
+@router.post("/api/scenario/export", tags=["scenario"])
+def export_scenario(request: Request, body: ScenarioRequest) -> Response:
+    a = _pick(request, body.analysis_id)
+    scenario = run_scenario(a.pr, _constraints(body.excluded, body.required, a), body.top_n)
+    return Response(
+        dumps(scenario.to_dict()),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="scenario.json"'},
     )
