@@ -21,7 +21,7 @@ from coverage.render import STATIC
 from .assistant_routes import router as assistant_router
 from .field_routes import page_router as field_page_router
 from .field_routes import router as field_router
-from .ratelimit import RateLimitExceeded, RateLimiter
+from .ratelimit import RateLimiter, RateLimitExceeded
 from .routes import create_state, router
 
 ROOT = Path(__file__).resolve().parent.parent

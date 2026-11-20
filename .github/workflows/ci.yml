@@ -18,7 +18,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Check for provider keys
-        run: "! git grep -qE 'gsk_[A-Za-z0-9]{20,}'"
+        run: "! git grep -qE '[g]sk_[A-Za-z0-9]{20,}'"
       - name: Lint
         run: |
           ruff check .

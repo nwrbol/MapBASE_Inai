@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let history = [], pending = null, undo = null, clearConfirm = false;
   let device = "";
   try {
-    device = sessionStorage.getItem("chat-device") || crypto.randomUUID();
+    device = sessionStorage.getItem("chat-device") || Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2,"0")).join("");
     sessionStorage.setItem("chat-device", device);
     const saved = JSON.parse(sessionStorage.getItem(storageKey) || "[]");
     history = saved.filter(m => ["user","assistant"].includes(m.role) && typeof m.content === "string").slice(-24);

@@ -10,6 +10,7 @@ from coverage.assistant.agent import answer
 from coverage.assistant.groq_client import ProviderError
 from coverage.assistant.prompt import OFF_TOPIC_REPLY
 from coverage.assistant.tools import Context, Id, Layer, Tab
+
 from .field_routes import field_map_view
 from .ratelimit import RateLimitExceeded
 from .routes import _pick, _state
@@ -125,13 +126,17 @@ def chat(request: Request, body: Chat):
         ) from None
     base = _pick(request, body.analysis_id)
     st = _state(request)
-    pr, data = base.pr, base.map_data
-    if body.include_field:
-        view = field_map_view(request)
-        pr, data = view.pr, view.map_data
+
+    def dataset(include_field):
+        if include_field:
+            view = field_map_view(request)
+            return view.pr, view.map_data
+        return base.pr, base.map_data
+
+    pr, data = dataset(body.include_field)
     state = body.map_state.model_dump(exclude_none=True)
-    state["uploaded"] = bool(body.analysis_id)
-    ctx = Context(pr, data, state, st.field_store.count() if not body.analysis_id else {})
+    state.update(uploaded=bool(body.analysis_id), field_included=body.include_field)
+    ctx = Context(pr, data, state, st.field_store.count() if not body.analysis_id else {}, dataset)
     try:
         result = answer(client, [m.model_dump() for m in body.messages], ctx)
     except ProviderError as exc:

@@ -3,6 +3,7 @@ import logging
 import time
 
 from coverage.errors import DataValidationError
+
 from .groq_client import ProviderError
 from .prompt import SYSTEM, summarize_view
 from .tools import SCHEMAS
@@ -22,6 +23,7 @@ def answer(client, history, ctx):
     usage = {}
     reply = "Не удалось завершить ответ, переформулируйте вопрос"
     for step in range(1, client.steps + 1):
+        logging.getLogger(__name__).debug("Шаг диалога %d", step)
         response = client.complete(messages, SCHEMAS)
         try:
             msg = response["choices"][0]["message"]

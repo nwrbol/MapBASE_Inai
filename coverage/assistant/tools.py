@@ -6,7 +6,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from coverage.geo import haversine_m
-from coverage.scenario import Constraints, Refusal, evaluate_manual, impact_of_refusals, run_scenario
+from coverage.scenario import Constraints, Refusal, evaluate_manual, impact_of_refusals
+from coverage.scenario import run_scenario as compute_scenario
 
 from .prompt import visible
 
@@ -56,16 +57,23 @@ def tool(fn):
 
 
 class Context:
-    def __init__(self, pr, data, state, field_stats=None):
-        self.pr, self.data, self.state = pr, data, state
+    def __init__(self, pr, data, state, field_stats=None, dataset=None):
+        self.state, self.dataset = state, dataset
+        self.use_data(pr, data)
         self.field_stats = field_stats or {}
         self.actions = []
-        self.cells = {c["id"]: c for c in data["cells"]}
-        self.sites = {c["id"]: c for c in data["candidates"]}
         raw = state.get("constraints", {})
         self.constraints = Constraints(
             tuple(Refusal(**r) for r in raw.get("excluded", [])), tuple(raw.get("required", []))
         )
+
+    def use_data(self, pr, data):
+        self.pr, self.data = pr, data
+        self.cells = {c["id"]: c for c in data["cells"]}
+        self.sites = {c["id"]: c for c in data["candidates"]}
+
+    def plan(self, pair, covered, source):
+        self.state["plan"] = {"pair": pair, "covered": covered, "source": source}
 
     def action(self, name, args, label, effect=None):
         self.actions.append({"type": name, "args": args, "label": label})
@@ -81,7 +89,8 @@ def get_summary(ctx):
     """Итог, очистка, сравнение и текущий план."""
     d = ctx.data
     return {
-        **{k: d[k] for k in ("result", "cleaning", "stats", "worst", "compare")},
+        **{k: d[k] for k in ("result", "cleaning", "stats", "worst")},
+        "compare": {name: d["compare"][name] for name in ("brute_force", "greedy")},
         "field_result": d.get("field_result"),
         "plan": ctx.state.get("plan"),
     }
@@ -135,11 +144,26 @@ def get_candidates(ctx, only_admissible: bool = False):
 @tool
 def evaluate_pair(ctx, a: Id, b: Id):
     """Оценка покрытия пары, пересечения и ограничений."""
-    return evaluate_manual(ctx.pr, a, b, ctx.constraints)
+    result = evaluate_manual(ctx.pr, a, b, ctx.constraints)
+    result.pop("covered_ids")
+    for key in ("lost_vs_optimum", "gained_vs_optimum"):
+        result[key] = len(result[key])
+    return result
+
+
+def scenario_summary(scenario):
+    return {
+        "best": scenario.best.to_dict(with_ids=False) if scenario.best else None,
+        "optimum": scenario.optimum.to_dict(with_ids=False),
+        "feasible": scenario.feasible,
+        "message": scenario.message,
+        "ties": [option.pair for option in scenario.ties],
+        "alternatives": [option.to_dict(with_ids=False) for option in scenario.alternatives],
+    }
 
 
 @tool
-def scenario_tool(
+def run_scenario(
     ctx,
     excluded: list[Id] | None = None,
     required: list[Id] | None = None,
@@ -150,11 +174,7 @@ def scenario_tool(
         ctx.constraints.excluded if excluded is None else tuple(Refusal(i) for i in excluded),
         ctx.constraints.required if required is None else tuple(required),
     )
-    return run_scenario(ctx.pr, cons, top_n).to_dict()
-
-
-REGISTRY["run_scenario"] = REGISTRY.pop("scenario_tool")
-SCHEMAS[-1]["function"]["name"] = "run_scenario"
+    return scenario_summary(compute_scenario(ctx.pr, cons, top_n))
 
 
 @tool
@@ -205,8 +225,17 @@ def set_candidate_status(
     if status == "excluded":
         ex.append(Refusal(id, reason))
     cons = Constraints(tuple(ex), tuple(req))
-    result = run_scenario(ctx.pr, cons, 3).to_dict()
+    result = scenario_summary(compute_scenario(ctx.pr, cons, 3))
     ctx.constraints = cons
+    best = result["best"] or {}
+    selected = ctx.state.get("selected_pair")
+    if selected and len(selected) == 2:
+        assessment = evaluate_pair(ctx, *selected)
+        if not assessment["violates_constraints"]:
+            best = assessment
+        else:
+            ctx.state["selected_pair"] = None
+    ctx.plan(best.get("pair"), best.get("covered", 0), "scenario")
     label = {"excluded": "Отказ", "required": "Фиксация", "available": "Доступна"}[status]
     return ctx.action("set_candidate_status", dict(id=id, status=status, reason=reason), f"{label}: {id}", result)
 
@@ -217,6 +246,8 @@ def select_pair(ctx, a: Id, b: Id):
     effect = evaluate_pair(ctx, a, b)
     if effect["violates_constraints"]:
         raise ValueError("Пара нарушает ограничения")
+    ctx.state["selected_pair"] = effect["pair"]
+    ctx.plan(effect["pair"], effect["covered"], "selected")
     return ctx.action("select_pair", dict(a=a, b=b), f"Пара: {a} + {b}", effect)
 
 
@@ -224,6 +255,8 @@ def select_pair(ctx, a: Id, b: Id):
 def reset_plan(ctx):
     """Сбросить ограничения и вернуть оптимальную пару."""
     ctx.constraints = Constraints()
+    ctx.state["selected_pair"] = None
+    ctx.plan(ctx.pr.result["best_candidates"], ctx.pr.result["covered_weak_cells"], "optimum")
     return ctx.action("reset_plan", {}, "Вернуть оптимальную пару", ctx.pr.result)
 
 
@@ -238,7 +271,11 @@ def set_layers(
     """Включить или выключить слои карты."""
     layers = set(ctx.state.get("active_layers", []))
     if reset:
-        layers = set() if reset == "none" else set("grid worst towers cands chosen ghost lost covered".split())
+        layers = (
+            set()
+            if reset == "none"
+            else set(["grid", "worst", "towers", "cands", "chosen", "ghost", "lost", "covered"])
+        )
         if reset == "default" and ctx.state.get("field_included"):
             layers.add("field")
     if only is not None:
@@ -249,9 +286,31 @@ def set_layers(
     return ctx.action(
         "set_layers",
         {"only": sorted(layers)},
-        "Слои: " + ", ".join(on or only or off or [reset or "карта"]),
+        "Слои: " + ", ".join(LAYER_NAMES[k] for k in (on or only or off or [reset or "none"])),
         {"active_layers": sorted(layers)},
     )
+
+
+LAYER_NAMES = dict(
+    grid="сетка",
+    worst="худшие клетки",
+    towers="базовые станции",
+    cands="площадки",
+    chosen="выбранная пара",
+    ghost="контур оптимума",
+    lost="потерянные клетки",
+    gained="новые клетки",
+    covered="покрытые клетки",
+    heat="тепловая карта",
+    day="день",
+    night="ночь",
+    delta="разница день/ночь",
+    worseNight="слабые ночью",
+    insufficient="мало данных",
+    field="полевые замеры",
+    none="выключены",
+    default="по умолчанию",
+)
 
 
 class Location(BaseModel):
@@ -299,6 +358,12 @@ def toggle_field(ctx, on: bool):
     """Включить учёт полевых замеров."""
     if ctx.state.get("uploaded"):
         raise ValueError("Полевые замеры доступны для исходного набора")
+    if ctx.dataset and on != ctx.state.get("field_included", False):
+        ctx.use_data(*ctx.dataset(on))
+        ctx.state["field_included"] = on
+        result = compute_scenario(ctx.pr, ctx.constraints, 1)
+        best = result.best
+        ctx.plan(best.pair if best else None, best.covered if best else 0, "field" if on else "scenario")
     return ctx.action("toggle_field", dict(on=on), "Полевые замеры: " + ("вкл" if on else "выкл"))
 
 

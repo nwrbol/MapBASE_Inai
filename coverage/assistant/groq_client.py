@@ -36,6 +36,7 @@ class GroqClient:
             if r.status_code in (401, 403):
                 raise ProviderError("Ассистент не настроен: проверьте ключ GROQ_API_KEY")
             if r.status_code == 404 or "model_decommissioned" in r.text or "model_not_found" in r.text:
+                logging.getLogger(__name__).warning("Модель недоступна, проверьте GROQ_MODEL")
                 raise ProviderError("Модель недоступна, проверьте GROQ_MODEL")
             if r.status_code == 429 or r.status_code >= 500:
                 if attempt == 0:

@@ -16,7 +16,7 @@ SYSTEM = f"""Ты — ИИ-ассистент приложения «Карта 
 
 
 def visible(point, bounds):
-    return not bounds or bounds[0] <= point[0] <= bounds[2] and bounds[1] <= point[1] <= bounds[3]
+    return not bounds or (bounds[0] <= point[0] <= bounds[2] and bounds[1] <= point[1] <= bounds[3])
 
 
 def summarize_view(data, bounds):
