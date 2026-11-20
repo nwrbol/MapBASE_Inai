@@ -253,6 +253,14 @@
 
   function updateSubmit() {
     const btn = $("#submit");
+    if (S.method === "file") {
+      const r = FILE.preview;
+      const n = r && r.stats ? r.stats.would_accept : 0;
+      const unitsOk = !r || !r.units_suspect || $("#f-units").checked;
+      btn.textContent = FILE.sending ? "Импортирую…" : n > 0 ? `Импортировать ${n} ${plural(n, "замер", "замера", "замеров")}` : "Импортировать";
+      btn.disabled = FILE.sending || n <= 0 || !unitsOk;
+      return;
+    }
     if (S.method === "manual" && S.sub === "paste") {
       const n = S.paste.ok;
       btn.textContent = n > 0 ? `Отправить ${n} ${plural(n, "строку", "строки", "строк")}` : "Отправить строки";
@@ -279,6 +287,7 @@
 
   async function submit() {
     if (S.sending) return;
+    if (S.method === "file") return commitFile();
     if (S.method === "manual" && S.sub === "paste") return sendPaste();
     if (!formValid()) return;
     const label = $("#device-label").value.trim();
@@ -568,18 +577,288 @@
     S.gps.timer = setTimeout(finishGps, GPS_SETTLE_MS);
   }
 
+  // ---------------------------------------------------------------- файл (импорт из инженерных приложений)
+
+  const FILE_DEBOUNCE_MS = 300;
+  const REASON_RU = {
+    out_of_bounds: "вне района",
+    duplicates: "дубли",
+    unparseable: "нечисловые",
+    bad_timestamp: "время не ISO",
+    rsrp_out_of_range: "RSRP вне диапазона",
+    missing_field: "пустые поля",
+  };
+  const FILE = { file: null, userMapping: null, preview: null, timer: null, abort: null, sending: false, batch: null, layer: null, renderer: null };
+  const MAP_FIELDS = ["lat", "lon", "rsrp", "timestamp", "date", "time", "tech"];
+
+  function fileError(msg) {
+    $("#file-error").textContent = msg || "";
+  }
+
+  function fileOptions() {
+    const o = {};
+    if ($("#f-delim").value) o.delimiter = $("#f-delim").value;
+    if ($("#f-dec").value) o.decimal_comma = $("#f-dec").value === "true";
+    if ($("#f-timefmt").value) o.time_format = $("#f-timefmt").value;
+    if ($("#f-tz").value.trim()) o.tz = $("#f-tz").value.trim();
+    if (FILE.userMapping) o.mapping = FILE.userMapping;
+    if (!$("#f-tech-wrap").classList.contains("hidden")) o.tech_filter = $("#f-tech").checked;
+    return o;
+  }
+
+  function fileForm(extra = {}) {
+    const fd = new FormData();
+    fd.append("file", FILE.file);
+    fd.append("options", JSON.stringify(fileOptions()));
+    Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
+    return fd;
+  }
+
+  function scheduleFilePreview(immediate) {
+    clearTimeout(FILE.timer);
+    if (!FILE.file) return;
+    FILE.timer = setTimeout(requestFilePreview, immediate ? 0 : FILE_DEBOUNCE_MS);
+  }
+
+  async function requestFilePreview() {
+    if (FILE.abort) FILE.abort.abort();
+    FILE.abort = new AbortController();
+    const mine = FILE.abort;
+    $("#file-name").textContent = `${FILE.file.name} · ${(FILE.file.size / 1024).toFixed(1)} КБ · разбираю…`;
+    try {
+      const r = await api("/api/field/import/preview", { method: "POST", body: fileForm(), signal: mine.signal });
+      fileError("");
+      FILE.preview = r;
+      renderFilePreview(r);
+      $("#file-name").textContent = `${FILE.file.name} · ${(FILE.file.size / 1024).toFixed(1)} КБ`;
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      FILE.preview = null;
+      $("#file-preview").classList.add("hidden");
+      clearFileLayer();
+      fileError(isNetworkError(e) ? "Нет соединения: предпросмотр недоступен. Выбранный файл сохранён, повторите позже." : e.status === 413 ? `Файл слишком большой: ${e.message}` : e.message);
+      $("#file-name").textContent = FILE.file.name;
+    }
+    updateSubmit();
+  }
+
+  function colOptions(columns, selected) {
+    return '<option value="">— нет —</option>' + columns.map((c) => `<option value="${esc(c)}"${c === selected ? " selected" : ""}>${esc(c)}</option>`).join("");
+  }
+
+  function renderFilePreview(r) {
+    $("#file-preview").classList.remove("hidden");
+    const d = r.detected;
+    // формат времени: сохраняем выбор пользователя, если он есть
+    const keepFmt = $("#f-timefmt").value;
+    $("#f-timefmt").innerHTML = '<option value="">авто</option>' + r.time_formats.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("");
+    $("#f-timefmt").value = keepFmt;
+    $("#f-tz").placeholder = d.timezone;
+    const delimName = { "\t": "табуляция", ",": "запятая", ";": "точка с запятой", "|": "вертикальная черта" }[d.delimiter] || d.delimiter;
+    $("#f-detected").textContent = `Кодировка: ${d.encoding} · разделитель: ${delimName} · время: ${d.time_format} (пояс ${d.timezone})` + (d.header_row ? ` · пропущено служебных строк: ${d.header_row}` : "");
+
+    const split = $("#f-split").checked || !!(r.mapping.date || r.mapping.time);
+    $("#f-split").checked = split;
+    $$("#f-map label.split").forEach((l) => l.classList.toggle("hidden", !split));
+    MAP_FIELDS.forEach((f) => {
+      const sel = $(`#f-map select[data-f="${f}"]`);
+      sel.innerHTML = colOptions(r.columns, r.mapping[f]);
+    });
+    $('#f-map select[data-f="timestamp"]').closest("label").classList.toggle("hidden", split);
+    $("#b-rsrp").classList.toggle("hidden", r.mapping_confidence.rsrp !== "low");
+
+    const hasTech = !!r.mapping.tech;
+    $("#f-tech-wrap").classList.toggle("hidden", !hasTech);
+    if (hasTech && FILE.techTouched !== true) $("#f-tech").checked = d.tech_filter;
+    $("#f-units-wrap").classList.toggle("hidden", !r.units_suspect);
+    if (!r.units_suspect) $("#f-units").checked = false;
+
+    $("#f-warnings").innerHTML = r.warnings.map((w) => `<li>${esc(w)}</li>`).join("");
+    if (!r.stats) {
+      $("#f-summary").textContent = `Укажите столбцы: ${r.missing.map((m) => ({ lat: "широта", lon: "долгота", rsrp: "RSRP", timestamp: "время" }[m] || m)).join(", ")}.`;
+    } else {
+      const s = r.stats;
+      const rb = s.rejected_by_reason;
+      const parts = [`Примем ${s.would_accept} из ${s.rows_total}`];
+      Object.entries(rb).forEach(([k, v]) => parts.push(`${REASON_RU[k] || k} ${v}`));
+      if (d.tech_filter || s.filtered_tech) parts.push(`не LTE ${s.filtered_tech}`);
+      $("#f-summary").textContent = parts.join(" · ");
+    }
+    const rows = [...r.sample, ...r.rejected_sample];
+    $("#f-sample tbody").innerHTML = rows
+      .map((x) => {
+        const cls = x.status === "ok" ? "ok" : x.status === "filtered" ? "filtered" : "rej";
+        const pos = x.lat !== undefined ? `${Number(x.lat).toFixed(5)}, ${Number(x.lon).toFixed(5)}` : x.raw_lat !== undefined ? `${esc(x.raw_lat)}, ${esc(x.raw_lon)}` : esc(x.raw || "—");
+        const rsrp = x.rsrp_dbm !== undefined ? num(x.rsrp_dbm, 0) : esc(x.raw_rsrp ?? "—");
+        const ts = esc(String(x.timestamp || x.raw_ts || "").replace("T", " ").slice(0, 19));
+        const status = x.status === "ok" ? "✓" : `<span class="rej-msg">${esc(x.message || "")}</span>`;
+        return `<tr class="${cls}"><td>${x.row}</td><td class="num">${pos}</td><td class="num">${rsrp}</td><td class="ts">${ts}</td><td>${status}</td></tr>`;
+      })
+      .join("");
+    drawFilePoints(r);
+    updateSubmit();
+  }
+
+  function clearFileLayer() {
+    if (FILE.layer) S.map.removeLayer(FILE.layer);
+    FILE.layer = null;
+  }
+
+  function drawFilePoints(r) {
+    clearFileLayer();
+    if (S.method !== "file") return;
+    if (!FILE.renderer) FILE.renderer = L.canvas();
+    const g = L.featureGroup();
+    r.points.forEach(([lat, lon, ok]) =>
+      L.circleMarker([lat, lon], { renderer: FILE.renderer, radius: 3, weight: 1, color: ok ? "#047857" : "#dc2626", fillColor: ok ? "#10b981" : "#ef4444", fillOpacity: 0.8, interactive: false }).addTo(g)
+    );
+    if (r.bbox) {
+      L.rectangle([[r.bbox[0], r.bbox[1]], [r.bbox[2], r.bbox[3]]], { color: "#f59e0b", weight: 2, dashArray: "4 4", fill: false, interactive: false }).addTo(g);
+    }
+    g.addTo(S.map);
+    FILE.layer = g;
+    if (r.bbox) {
+      const b = S.cfg.meta.bounds;
+      S.map.fitBounds(
+        [[Math.min(b.lat_min, r.bbox[0]), Math.min(b.lon_min, r.bbox[1])], [Math.max(b.lat_max, r.bbox[2]), Math.max(b.lon_max, r.bbox[3])]],
+        { padding: [12, 12] }
+      );
+    }
+  }
+
+  function userMappingFromControls() {
+    const m = {};
+    MAP_FIELDS.forEach((f) => {
+      m[f] = $(`#f-map select[data-f="${f}"]`).value || null;
+    });
+    if (!$("#f-split").checked) {
+      m.date = null;
+      m.time = null;
+    } else {
+      m.timestamp = null;
+    }
+    return m;
+  }
+
+  async function commitFile() {
+    if (!FILE.file || !FILE.preview || FILE.sending) return;
+    FILE.sending = true;
+    updateSubmit();
+    try {
+      const r = await api("/api/field/import/commit", { method: "POST", body: fileForm({ confirm_units: $("#f-units").checked ? "true" : "false" }) });
+      FILE.batch = r.batch_id;
+      const s = r.field_diff.summary;
+      const bits = [];
+      if (s.became_counted) bits.push(`${s.became_counted} ${plural(s.became_counted, "клетка стала", "клетки стали", "клеток стало")} учитываемыми`);
+      if (s.class_changed) bits.push(`${s.class_changed} ${plural(s.class_changed, "сменила", "сменили", "сменили")} цвет`);
+      const rej = Object.entries(r.rejected_by_reason).map(([k, v]) => `${REASON_RU[k] || k} ${v}`);
+      const text = `✓ Импортировано ${r.accepted}${r.filtered_tech ? ` · не LTE ${r.filtered_tech}` : ""}${rej.length ? " · отклонено: " + rej.join(", ") : ""}.` + (bits.length ? ` ${bits.join(", ")}.` : " Состав учитываемых клеток не изменился.");
+      $("#file-done-text").textContent = text;
+      $("#file-done").classList.remove("hidden");
+      toast("ok", text);
+      $("#file-preview").classList.add("hidden");
+      clearFileLayer();
+      FILE.preview = null;
+      FILE.file = null;
+      $("#file-name").textContent = "";
+      refreshAfterChange();
+    } catch (e) {
+      toast("err", isNetworkError(e) ? "Нет соединения, импорт не выполнен. Файл и настройки сохранены." : `✗ ${esc(e.message)}`);
+    } finally {
+      FILE.sending = false;
+      updateSubmit();
+    }
+  }
+
+  async function undoImport() {
+    if (!FILE.batch) return;
+    const id = FILE.batch;
+    $("#file-undo").disabled = true;
+    try {
+      const r = await api(`/api/field/batches/${encodeURIComponent(id)}`, { method: "DELETE" });
+      toast("ok", `Импорт отменён: удалено ${r.deleted}.`);
+      FILE.batch = null;
+      $("#file-done").classList.add("hidden");
+      refreshAfterChange();
+    } catch (e) {
+      if (e.status === 404) {
+        FILE.batch = null;
+        $("#file-done").classList.add("hidden");
+        toast("warn", "Этого импорта уже нет на сервере.");
+      } else {
+        toast("err", isNetworkError(e) ? "Нет соединения, импорт не отменён." : `✗ ${esc(e.message)}`);
+      }
+    } finally {
+      $("#file-undo").disabled = false;
+    }
+  }
+
+  function onFileChosen(ev) {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    FILE.file = f;
+    FILE.userMapping = null;
+    FILE.techTouched = false;
+    FILE.preview = null;
+    $("#file-done").classList.add("hidden");
+    ["#f-delim", "#f-dec", "#f-timefmt"].forEach((id) => ($(id).value = ""));
+    $("#f-tz").value = "";
+    $("#f-split").checked = false;
+    $("#f-units").checked = false;
+    fileError("");
+    scheduleFilePreview(true);
+    ev.target.value = "";
+  }
+
+  function bindFileTab() {
+    $("#file-input").addEventListener("change", onFileChosen);
+    ["#f-delim", "#f-dec", "#f-timefmt"].forEach((id) =>
+      $(id).addEventListener("change", () => {
+        if (id === "#f-delim") FILE.userMapping = null; // другой разделитель — столбцы другие, определяем заново
+        scheduleFilePreview(false);
+      })
+    );
+    $("#f-tz").addEventListener("input", () => scheduleFilePreview(false));
+    $("#f-map").addEventListener("change", () => {
+      FILE.userMapping = userMappingFromControls();
+      scheduleFilePreview(false);
+    });
+    $("#f-split").addEventListener("change", () => {
+      FILE.userMapping = userMappingFromControls();
+      $$("#f-map label.split").forEach((l) => l.classList.toggle("hidden", !$("#f-split").checked));
+      $('#f-map select[data-f="timestamp"]').closest("label").classList.toggle("hidden", $("#f-split").checked);
+      scheduleFilePreview(false);
+    });
+    $("#f-tech").addEventListener("change", () => {
+      FILE.techTouched = true;
+      scheduleFilePreview(false);
+    });
+    $("#f-units").addEventListener("change", updateSubmit);
+    $("#file-undo").addEventListener("click", undoImport);
+  }
+
   // ---------------------------------------------------------------- переключатели
 
   function setMethod(m) {
     if (S.method === "gps" && m !== "gps") stopGps();
     S.method = m;
     $$("#method-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.m === m)));
-    ["pin", "gps", "manual"].forEach((k) => $("#m-" + k).classList.toggle("hidden", k !== m));
-    if (S.marker) S.marker.dragging[draggable() ? "enable" : "disable"]();
-    if (S.pos) setPos(S.pos.lat, S.pos.lon, m === "gps" && S.pos.accuracy ? { accuracy: S.pos.accuracy } : {});
+    ["pin", "gps", "manual", "file"].forEach((k) => $("#m-" + k).classList.toggle("hidden", k !== m));
+    // на вкладке «Файл» метка и круг точности скрыты; слой файла показывается только там
+    if (m === "file") {
+      if (S.marker) S.map.removeLayer(S.marker);
+      if (S.accCircle) S.map.removeLayer(S.accCircle);
+      if (FILE.preview) drawFilePoints(FILE.preview);
+    } else {
+      clearFileLayer();
+      if (S.marker && !S.map.hasLayer(S.marker)) S.marker.addTo(S.map);
+      if (S.accCircle && !S.map.hasLayer(S.accCircle)) S.accCircle.addTo(S.map);
+    }
+    if (S.marker && m !== "file") S.marker.dragging[draggable() ? "enable" : "disable"]();
+    if (S.pos && m !== "file") setPos(S.pos.lat, S.pos.lon, m === "gps" && S.pos.accuracy ? { accuracy: S.pos.accuracy } : {});
     updateCommonVisibility();
     renderCellInfo(null);
-    if (S.pos) scheduleHint();
+    if (S.pos && m !== "file") scheduleHint();
     updateSubmit();
     setTimeout(() => S.map.invalidateSize(), 50);
   }
@@ -596,7 +875,7 @@
 
   function updateCommonVisibility() {
     // в режиме вставки строк RSRP и время берутся из самих строк
-    $("#common").classList.toggle("hidden", S.method === "manual" && S.sub === "paste");
+    $("#common").classList.toggle("hidden", S.method === "file" || (S.method === "manual" && S.sub === "paste"));
   }
 
   function parseCoord(text) {
@@ -659,6 +938,7 @@
       if (custom && !$("#time-input").value) $("#time-input").value = isoWithOffset(new Date(), S.cfg.meta.utc_offset_minutes).slice(0, 16);
       renderTime();
     });
+    bindFileTab();
     $("#device-label").value = store.get(KEYS.label, "");
     $("#device-label").addEventListener("input", (ev) => store.set(KEYS.label, ev.target.value));
     $("#recent").addEventListener("click", (ev) => {

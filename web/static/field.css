@@ -146,3 +146,17 @@ input[type=range] { padding: 0; min-height: 44px; accent-color: var(--accent); b
 /* крупные цели касания для зума Leaflet (>= 44 px) */
 .leaflet-touch .leaflet-bar a, .leaflet-bar a { width: 44px; height: 44px; line-height: 44px; font-size: 22px; }
 .leaflet-control-attribution { font-size: 12px; }
+
+/* вкладка «Файл» */
+.filebtn { display: flex; align-items: center; justify-content: center; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; color: var(--text); margin-top: 6px; }
+.check input { width: 24px; min-height: 24px; height: 24px; margin: 0; }
+.badge { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); font-size: 12px; }
+.warnlist { margin: 0 0 8px; padding-left: 18px; color: var(--warn); font-size: 14px; }
+.warnlist:empty { display: none; }
+.check.units { background: var(--warn-bg); border-radius: 10px; padding: 6px 10px; color: var(--warn); }
+#f-sample { font-size: 12.5px; }
+#f-sample tr.filtered td:first-child { border-left: 4px solid var(--muted); }
+#f-sample td.num, #f-sample td.ts { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#file-error:empty { display: none !important; }
+#file-error { display: block; margin-top: 8px; }

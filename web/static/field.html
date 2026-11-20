@@ -27,10 +27,11 @@
     <p>Полевые замеры хранятся отдельно и не влияют на <code>result.json</code>.</p>
   </details>
 
-  <div class="tabs" role="tablist" aria-label="Способ добавления замера" id="method-tabs">
+  <div class="tabs four" role="tablist" aria-label="Способ добавления замера" id="method-tabs">
     <button type="button" role="tab" data-m="pin" aria-selected="true">Метка</button>
     <button type="button" role="tab" data-m="gps" aria-selected="false">GPS</button>
     <button type="button" role="tab" data-m="manual" aria-selected="false">Вручную</button>
+    <button type="button" role="tab" data-m="file" aria-selected="false">Файл</button>
   </div>
 
   <!-- Метка -->
@@ -67,6 +68,61 @@
       <p class="hint">Пример (нажмите, чтобы подставить): <button type="button" class="linklike" id="paste-example">42.851200,74.580300,-112,2026-11-20T22:15:00+06:00</button></p>
       <button type="button" class="btn wide" id="paste-check">Проверить</button>
       <div id="paste-result" class="paste-result"></div>
+    </div>
+  </section>
+
+  <!-- Файл: импорт лога из инженерного приложения -->
+  <section class="method hidden" id="m-file">
+    <label class="btn wide filebtn" for="file-input">Выбрать файл</label>
+    <input type="file" id="file-input" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
+    <p class="hint">Экспорт лога из G-NetTrack, Network Cell Info и др. Нужны столбцы: широта, долгота, RSRP, время. Файл до 10 МБ.</p>
+    <div id="file-name" class="muted small"></div>
+    <div id="file-error" class="gps-status err" role="alert"></div>
+
+    <div id="file-preview" class="hidden">
+      <div class="card">
+        <h2>Распознано</h2>
+        <div class="row2">
+          <label>Разделитель
+            <select id="f-delim"><option value="">авто</option><option value=",">запятая ,</option><option value=";">точка с запятой ;</option><option value="\t">табуляция</option><option value="|">вертикальная черта |</option></select>
+          </label>
+          <label>Десятичная запятая
+            <select id="f-dec"><option value="">авто</option><option value="true">да</option><option value="false">нет</option></select>
+          </label>
+          <label>Формат времени
+            <select id="f-timefmt"></select>
+          </label>
+          <label>Часовой пояс
+            <input id="f-tz" autocomplete="off" placeholder="Asia/Bishkek">
+          </label>
+        </div>
+        <p class="muted small" id="f-detected"></p>
+
+        <h2>Столбцы</h2>
+        <div class="row2" id="f-map">
+          <label>Широта <select data-f="lat"></select></label>
+          <label>Долгота <select data-f="lon"></select></label>
+          <label><span>RSRP <span class="badge hidden" id="b-rsrp">проверьте</span></span> <select data-f="rsrp"></select></label>
+          <label>Время <select data-f="timestamp"></select></label>
+          <label class="split hidden">Дата <select data-f="date"></select></label>
+          <label class="split hidden">Время (отдельно) <select data-f="time"></select></label>
+          <label>Технология <select data-f="tech"></select></label>
+        </div>
+        <label class="check"><input type="checkbox" id="f-split"> Дата и время в разных столбцах</label>
+        <label class="check hidden" id="f-tech-wrap"><input type="checkbox" id="f-tech" checked> Только LTE/NR (у других технологий нет RSRP)</label>
+      </div>
+
+      <div class="card">
+        <ul class="warnlist" id="f-warnings"></ul>
+        <label class="check units hidden" id="f-units-wrap"><input type="checkbox" id="f-units"> Я проверил: этот столбец содержит RSRP в дБм</label>
+        <div id="f-summary" class="paste-summary" aria-live="polite"></div>
+        <div class="paste-result"><table id="f-sample"><thead><tr><th>№</th><th>lat, lon</th><th>RSRP</th><th>Время</th><th>Статус</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div id="file-done" class="card hidden" role="status">
+      <div id="file-done-text"></div>
+      <button type="button" class="btn wide" id="file-undo">Отменить этот импорт</button>
     </div>
   </section>
 
