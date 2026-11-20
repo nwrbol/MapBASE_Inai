@@ -49,13 +49,12 @@ def add(client, items, **kw):
 
 
 def test_version_empty_and_growing(client, cell3):
-    assert client.get("/api/field/version").json() == {
-        "version": client.get("/api/field/version").json()["version"],
-        "count": 0,
-    }
-    v0 = client.get("/api/field/version").json()["version"]
+    v = client.get("/api/field/version").json()
+    assert v["count"] == 0 and v["by_source"] == {"map_pin": 0, "gps": 0, "manual": 0, "import": 0}
+    v0 = v["version"]
     assert add(client, [item(cell3)]).status_code == 200
-    assert client.get("/api/field/version").json() == {"version": v0 + 1, "count": 1}
+    v1 = client.get("/api/field/version").json()
+    assert v1["version"] == v0 + 1 and v1["count"] == 1 and v1["by_source"]["map_pin"] == 1
 
 
 def test_add_returns_cell_feedback(client, cell3):

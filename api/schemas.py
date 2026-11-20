@@ -190,3 +190,4 @@ class FieldAddResponse(BaseModel):
 class FieldVersion(BaseModel):
     version: int
     count: int
+    by_source: dict[str, int] = Field(default_factory=dict, description="map_pin / gps / manual / import")

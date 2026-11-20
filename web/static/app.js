@@ -13,6 +13,13 @@
     duplicates: "дубли",
   };
   const SERVER = document.body.classList.contains("server");
+  // На устройствах без наведения (телефоны) подсказки клеток открываются по тапу: popup вместо tooltip.
+  const TOUCH = !!(window.matchMedia && window.matchMedia("(hover: none)").matches);
+  L.Layer.include({
+    bindInfo(html) {
+      return TOUCH ? this.bindPopup(html) : this.bindTooltip(html);
+    },
+  });
   // Снимок страницы до инициализации карты — для «Скачать map.html» в автономном режиме.
   const ORIGINAL_HTML = "<!doctype html>\n" + document.documentElement.outerHTML;
   const $ = (sel) => document.querySelector(sel);
@@ -63,7 +70,7 @@
 
   function cellTip(c) {
     const m = current.meta;
-    return `<b>${esc(c.id)}</b><br>медиана: ${fmt(c.m, 2)} дБм<br>замеров: ${c.n}<br>класс: ${c.counted === false ? "не учитывается (n&lt;" + m.min_samples + ")" : CLS_RU[c.cls]}`;
+    return `<b>${esc(c.id)}</b><br>медиана: ${fmt(c.m, 2)} дБм<br>замеров: ${c.n}<br>класс: ${c.counted === false ? "не учитывается (n&lt;" + m.min_samples + ")" : CLS_RU[c.cls]}${c.n_field !== undefined ? "<br>в т.ч. полевых: " + c.n_field : ""}`;
   }
 
   function rect(b, style) {
@@ -77,7 +84,9 @@
     if (legend) map.removeControl(legend);
   }
 
-  function buildLayers(d) {
+  function buildLayers(d, opts = {}) {
+    // при обновлении данных без перезагрузки сохраняем, какие слои включил пользователь
+    const keepVisible = opts.keepView ? Object.keys(groups).filter((k) => map.hasLayer(groups[k])) : null;
     clearLayers();
     const m = d.meta;
 
@@ -86,9 +95,9 @@
     const insufficient = L.featureGroup();
     d.cells.forEach((c) => {
       if (c.counted) {
-        rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindTooltip(cellTip(c)).addTo(grid);
+        rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindInfo(cellTip(c)).addTo(grid);
       } else {
-        rect(c.b, { color: "#777", weight: 0.4, dashArray: "2 2", fillColor: COLORS.grey, fillOpacity: 0.35 }).bindTooltip(cellTip(c)).addTo(insufficient);
+        rect(c.b, { color: "#777", weight: 0.4, dashArray: "2 2", fillColor: COLORS.grey, fillOpacity: 0.35 }).bindInfo(cellTip(c)).addTo(insufficient);
       }
     });
 
@@ -123,7 +132,7 @@
     const dn = d.daynight || {};
     const dnLayer = (cells) => {
       const g = L.featureGroup();
-      (cells || []).forEach((c) => rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.55 }).bindTooltip(cellTip(c)).addTo(g));
+      (cells || []).forEach((c) => rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.55 }).bindInfo(cellTip(c)).addTo(g));
       return g;
     };
     const day = dnLayer(dn.day_cells);
@@ -132,15 +141,16 @@
     (dn.delta || []).forEach((c) => {
       const v = c.d;
       const col = v <= -3 ? "#b91c1c" : v < 0 ? "#f87171" : v < 3 ? "#93c5fd" : "#1d4ed8";
-      rect(c.b, { color: "#555", weight: 0.3, fillColor: col, fillOpacity: 0.6 }).bindTooltip(`<b>${esc(c.id)}</b><br>Δ ночь − день: ${fmt(v, 2)} дБ`).addTo(delta);
+      rect(c.b, { color: "#555", weight: 0.3, fillColor: col, fillOpacity: 0.6 }).bindInfo(`<b>${esc(c.id)}</b><br>Δ ночь − день: ${fmt(v, 2)} дБ`).addTo(delta);
     });
     const worseNight = L.featureGroup();
     const onlyNight = new Set(dn.red_only_night || []);
     d.cells.filter((c) => onlyNight.has(c.id)).forEach((c) => {
-      rect(c.b, { color: "#7c3aed", weight: 2, fillColor: "#7c3aed", fillOpacity: 0.25 }).bindTooltip(`<b>${esc(c.id)}</b><br>красная только ночью`).addTo(worseNight);
+      rect(c.b, { color: "#7c3aed", weight: 2, fillColor: "#7c3aed", fillOpacity: 0.25 }).bindInfo(`<b>${esc(c.id)}</b><br>красная только ночью`).addTo(worseNight);
     });
 
-    groups = { grid, insufficient, worst, towers, cands, chosen, covered, ghost, lost, gained, heat, day, night, delta, worseNight };
+    const fieldLayer = buildFieldLayer(d);
+    groups = { field: fieldLayer, grid, insufficient, worst, towers, cands, chosen, covered, ghost, lost, gained, heat, day, night, delta, worseNight };
     [grid, covered, lost, towers, cands, ghost, chosen, worst].forEach((g) => g.addTo(map));
 
     layerControl = L.control.layers(null, {
@@ -161,10 +171,20 @@
       [`Недостаточно данных (n<${m.min_samples})`]: insufficient,
     }, { collapsed: window.innerWidth < 760 }).addTo(map);
 
-    legend = L.control({ position: "bottomright" });
+    if (m.field_included) {
+      layerControl.addOverlay(fieldLayer, "Полевые замеры (◆ метка, ● GPS, ■ вручную, ▲ импорт)");
+      fieldLayer.addTo(map);
+    }
+    if (keepVisible) {
+      Object.entries(groups).forEach(([k, g]) => {
+        if (k !== "field" && !keepVisible.includes(k)) map.removeLayer(g);
+      });
+    }
+
+    legend = L.control({ position: window.matchMedia("(max-width: 760px)").matches ? "bottomleft" : "bottomright" });
     legend.onAdd = () => {
       const div = L.DomUtil.create("div", "legend");
-      div.innerHTML =
+      let body =
         `<b>Медиана RSRP</b><br>` +
         `<i style="background:${COLORS.green}"></i>≥ ${m.green_min} дБм<br>` +
         `<i style="background:${COLORS.yellow}"></i>${m.red_below} … ${m.green_min}<br>` +
@@ -177,14 +197,24 @@
         `<span class="line" style="border-top:2px dashed #6b7280"></span>оптимум по ТЗ («призрак»)<br>` +
         `<i style="background:rgba(124,58,237,.35);border-color:#7c3aed"></i>потерянные клетки<br>` +
         `<i style="background:rgba(8,145,178,.35);border-color:#0891b2"></i>новые клетки`;
+      if (m.field_included) body += `<br>◆ метка · ● GPS · ■ вручную · ▲ импорт (полевые)`;
+      div.innerHTML = `<button type="button" class="legend-toggle" aria-label="Легенда" aria-expanded="false">ⓘ</button><div class="legend-body">${body}</div>`;
+      const tgl = div.querySelector(".legend-toggle");
+      tgl.addEventListener("click", () => {
+        const open = div.classList.toggle("open");
+        tgl.setAttribute("aria-expanded", String(open));
+      });
+      L.DomEvent.disableClickPropagation(div);
       return div;
     };
     legend.addTo(map);
 
     const b = m.bounds;
     fitTarget = [[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]];
-    fitted = false;
-    tryFit();
+    if (!opts.keepView) {
+      fitted = false;
+      tryFit();
+    }
     L.rectangle([[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]], { color: "#111", weight: 1, dashArray: "4 4", fill: false, interactive: false }).addTo(grid);
     renderScenarioLayers();
   }
@@ -194,6 +224,9 @@
     $("#k-pair").textContent = r.best_candidates.join(" + ") || "—";
     $("#k-covered").textContent = r.covered_weak_cells;
     $("#k-dropped").textContent = r.dropped_rows;
+    $("#ss-pair").textContent = r.best_candidates.join(" + ") || "—";
+    $("#ss-cov").textContent = `${r.covered_weak_cells} красных`;
+    $("#ss-drop").textContent = `dropped ${r.dropped_rows}`;
 
     const cl = d.cleaning;
     let rows = `<tr><td>Строк всего</td><td>${cl.total}</td></tr>`;
@@ -252,13 +285,15 @@
     }
   }
 
-  function render(d) {
+  function render(d, opts = {}) {
     current = d;
     $("#err").classList.add("hidden");
     resetScenarioForDataset(d);
-    buildLayers(d);
+    buildLayers(d, opts);
     fillPanel(d);
     afterDatasetRendered();
+    renderFieldBlock(d);
+    if (opts.highlight && d.meta.field_included) highlightDiff(d);
   }
 
   function showError(msg) {
@@ -294,11 +329,11 @@
     });
   }
 
-  async function loadDefault() {
-    const res = await fetch("/api/mapdata");
+  async function loadDefault(opts = {}) {
+    const res = await fetch(fieldOn ? "/api/mapdata?include_field=true" : "/api/mapdata");
     if (!res.ok) throw new Error(`Ошибка API ${res.status}: ${await res.text()}`);
     analysisId = null;
-    render(await res.json());
+    render(await res.json(), opts);
   }
 
   function bindUpload() {
@@ -320,6 +355,7 @@
           throw new Error(`Ошибка ${res.status}: ${detail}`);
         }
         analysisId = body.analysis_id;
+        setFieldToggle(false);
         render(body.map_data);
         status.textContent = `Готово: dropped_rows=${body.result.dropped_rows}, пара ${body.result.best_candidates.join("+")}.`;
       } catch (e) {
@@ -558,7 +594,7 @@
     const ctrl = new AbortController();
     scAbort = ctrl;
     try {
-      const res = SERVER
+      const res = SERVER && !fieldOn
         ? await postJSON("/api/scenario", { analysis_id: analysisId, ...constraintsPayload(), top_n: TOP_N }, ctrl.signal)
         : SC.runScenario(current, constraintsPayload(), TOP_N);
       if (seq !== scSeq) return;
@@ -709,7 +745,7 @@
       card2 = `<div class="sc-card infeasible"><div class="sc-t">С учётом отказов</div><div class="sc-pair">—</div><div class="sc-sub">пара не найдена</div></div>`;
     }
     $("#sc-cards").innerHTML =
-      `<div class="sc-card"><div class="sc-t">Оптимум по ТЗ</div><div class="sc-pair">${esc(pairText(opt.pair))}</div><div class="sc-n">${opt.covered} красных клеток</div><div class="sc-sub">это значение в result.json</div></div>` + card2;
+      `<div class="sc-card"><div class="sc-t">${current.meta.field_included ? "Оптимум с полевыми" : "Оптимум по ТЗ"}</div><div class="sc-pair">${esc(pairText(opt.pair))}</div><div class="sc-n">${opt.covered} красных клеток</div><div class="sc-sub">${current.meta.field_included ? "с учётом полевых замеров; result.json: " + esc(current.result.best_candidates.join(" + ")) : "это значение в result.json"}</div></div>` + card2;
 
     $("#sc-notice").classList.toggle("hidden", !cons);
     const msg = $("#sc-message");
@@ -821,7 +857,7 @@
 
   async function downloadScenario() {
     try {
-      if (SERVER) {
+      if (SERVER && !fieldOn) {
         const res = await fetch("/api/scenario/export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -897,15 +933,15 @@
     if (info) {
       info.covered_ids.forEach((id) => {
         const c = cache.cellById[id];
-        if (c) rect(c.b, { color: "#1d4ed8", weight: 1.6, fill: true, fillColor: "#1d4ed8", fillOpacity: 0.04 }).bindTooltip(cellTip(c)).addTo(groups.covered);
+        if (c) rect(c.b, { color: "#1d4ed8", weight: 1.6, fill: true, fillColor: "#1d4ed8", fillOpacity: 0.04 }).bindInfo(cellTip(c)).addTo(groups.covered);
       });
       info.lost_vs_optimum.forEach((id) => {
         const c = cache.cellById[id];
-        if (c) rect(c.b, { color: "#7c3aed", weight: 2, dashArray: "4 3", fillColor: "#7c3aed", fillOpacity: 0.28 }).bindTooltip(`<b>${esc(c.id)}</b><br>потеряна: покрывал оптимум по ТЗ, эта пара нет`).addTo(groups.lost);
+        if (c) rect(c.b, { color: "#7c3aed", weight: 2, dashArray: "4 3", fillColor: "#7c3aed", fillOpacity: 0.28 }).bindInfo(`<b>${esc(c.id)}</b><br>потеряна: покрывал оптимум по ТЗ, эта пара нет`).addTo(groups.lost);
       });
       info.gained_vs_optimum.forEach((id) => {
         const c = cache.cellById[id];
-        if (c) rect(c.b, { color: "#0891b2", weight: 2, dashArray: "4 3", fillColor: "#0891b2", fillOpacity: 0.28 }).bindTooltip(`<b>${esc(c.id)}</b><br>новая: оптимум по ТЗ её не покрывал`).addTo(groups.gained);
+        if (c) rect(c.b, { color: "#0891b2", weight: 2, dashArray: "4 3", fillColor: "#0891b2", fillOpacity: 0.28 }).bindInfo(`<b>${esc(c.id)}</b><br>новая: оптимум по ТЗ её не покрывал`).addTo(groups.gained);
       });
     }
 
@@ -993,7 +1029,7 @@
     scenario.manualPick = pair;
     setBusy(true);
     try {
-      const res = SERVER
+      const res = SERVER && !fieldOn
         ? await postJSON("/api/scenario/evaluate", { analysis_id: analysisId, pair, ...constraintsPayload() })
         : SC.evaluateManual(current, pair[0], pair[1], constraintsPayload());
       scenario.manualResult = res;
@@ -1029,12 +1065,250 @@
     }
   }
 
+  // ===================================================================================
+  // Полевые замеры на основной карте (только веб-режим) и нижняя шторка на телефонах
+  // ===================================================================================
+  const FIELD_POLL_MS = 10000;
+  const FIELD_HL_MS = 3000;
+  const SRC_GLYPH = { map_pin: "◆", gps: "●", manual: "■", import: "▲" };
+  const SRC_RU = { map_pin: "метка", gps: "GPS", manual: "вручную", import: "импорт" };
+  let fieldOn = false; // «Учитывать полевые замеры»: по умолчанию выключено
+  let fieldVer = null;
+  let fieldCountInfo = null; // {count, by_source}
+  let fieldHL = null;
+
+  function fieldPointColor(v, m) {
+    return v >= m.green_min ? COLORS.green : v < m.red_below ? COLORS.red : COLORS.yellow;
+  }
+
+  function buildFieldLayer(d) {
+    /* Слой «Полевые замеры»: цвет по RSRP, форма по источнику (◆ метка, ● GPS, ■ вручную, ▲ импорт). */
+    const g = L.featureGroup();
+    (d.field_points || []).forEach((p) => {
+      const col = fieldPointColor(p.rsrp, d.meta);
+      const html = `<b>${fmt(p.rsrp, 1)} дБм</b><br>источник: ${esc(SRC_RU[p.source] || p.source)}` +
+        `<br>время: ${esc(String(p.timestamp).replace("T", " ").slice(0, 19))}` +
+        (p.accuracy_m ? `<br>точность GPS: ±${Math.round(p.accuracy_m)} м` : "") +
+        `<br>клетка: ${esc(p.cell_id)}`;
+      L.marker([p.lat, p.lon], {
+        icon: L.divIcon({ className: "fpt", html: `<span style="color:${col}">${SRC_GLYPH[p.source] || "●"}</span>`, iconSize: [18, 18] }),
+      })
+        .bindPopup(html)
+        .addTo(g);
+    });
+    return g;
+  }
+
+  function showFieldCount() {
+    const el = $("#field-count");
+    if (!el) return;
+    const i = fieldCountInfo;
+    if (!i) {
+      el.textContent = "—";
+      return;
+    }
+    const bs = i.by_source || {};
+    el.textContent = i.count
+      ? `Всего ${i.count}: метка ${bs.map_pin || 0}, GPS ${bs.gps || 0}, вручную ${bs.manual || 0}, импорт ${bs.import || 0}.`
+      : "Полевых замеров пока нет.";
+  }
+
+  function renderFieldBlock(d) {
+    if (!SERVER || !$("#field-card")) return;
+    const m = d.meta;
+    const included = !!m.field_included;
+    if (included) {
+      fieldVer = m.field_version;
+      fieldCountInfo = { count: m.field_count, by_source: m.field_by_source };
+    }
+    showFieldCount();
+    const banner = $("#field-banner");
+    banner.classList.toggle("hidden", !included);
+    if (included) banner.textContent = `Карта включает ${m.field_count} ${plural(m.field_count, "полевой замер", "полевых замера", "полевых замеров")}. result.json считается по исходным данным.`;
+
+    const bp = included && d.field_diff ? d.field_diff.best_pair : null;
+    const bpEl = $("#field-bestpair");
+    if (bp && bp.changed) {
+      bpEl.textContent = `С учётом полевых замеров лучшая пара: ${bp.after.join(" + ")} (было ${bp.before.join(" + ")}). Официальный ответ в result.json не меняется.`;
+      bpEl.classList.remove("hidden");
+    } else {
+      bpEl.classList.add("hidden");
+    }
+
+    const cells = included && d.field_diff ? d.field_diff.cells : [];
+    $("#field-changes-wrap").classList.toggle("hidden", !cells.length);
+    $("#field-changes").innerHTML = cells
+      .slice(0, 50)
+      .map((c) => {
+        const b = c.before;
+        const a = c.after;
+        let t = `<b>${esc(c.cell_id)}</b>: n ${b ? b.n : 0}→${a ? a.n : 0}`;
+        if (a && b && a.cls !== b.cls) t += `, ${CLS_RU[b.cls]}→${CLS_RU[a.cls]}`;
+        if (a && a.counted && !(b && b.counted)) t += ", теперь учитывается";
+        return `<li data-cell="${esc(c.cell_id)}">${t}</li>`;
+      })
+      .join("");
+  }
+
+  function highlightDiff(d) {
+    if (fieldHL) {
+      map.removeLayer(fieldHL);
+      fieldHL = null;
+    }
+    const cells = d.field_diff ? d.field_diff.cells : [];
+    if (!cells.length) return;
+    const byId = Object.fromEntries(d.cells.map((c) => [c.id, c]));
+    const g = L.featureGroup();
+    cells.forEach((c) => {
+      const cell = byId[c.cell_id];
+      if (cell) rect(cell.b, { color: "#f59e0b", weight: 4, fill: false, interactive: false }).addTo(g);
+    });
+    g.addTo(map);
+    fieldHL = g;
+    setTimeout(() => {
+      if (fieldHL === g) {
+        map.removeLayer(g);
+        fieldHL = null;
+      }
+    }, FIELD_HL_MS);
+  }
+
+  function setFieldToggle(on) {
+    fieldOn = on;
+    const t = $("#field-toggle");
+    if (t) t.checked = on;
+  }
+
+  async function pollField() {
+    /* Раз в 10 с: лёгкий опрос версии. Если переключатель включён и версия выросла, данные перезапрашиваются. */
+    if (document.hidden) return;
+    try {
+      const res = await fetch("/api/field/version");
+      if (!res.ok) return;
+      const v = await res.json();
+      const grew = fieldVer !== null && v.version !== fieldVer;
+      if (fieldOn && grew && analysisId === null) {
+        await loadDefault({ keepView: true, highlight: true });
+        return;
+      }
+      fieldCountInfo = { count: v.count, by_source: v.by_source };
+      if (!fieldOn) fieldVer = v.version;
+      showFieldCount();
+    } catch (e) {
+      /* нет сети: попробуем в следующий раз */
+    }
+  }
+
+  function initField() {
+    if (!SERVER || !$("#field-card")) return;
+    $("#field-toggle").addEventListener("change", async (ev) => {
+      setFieldToggle(ev.target.checked);
+      try {
+        await loadDefault({ keepView: true, highlight: fieldOn });
+      } catch (e) {
+        setFieldToggle(false);
+        showError(e.message);
+      }
+    });
+    $("#field-changes").addEventListener("click", (ev) => {
+      const li = ev.target.closest("li[data-cell]");
+      const c = li && current.cells.find((x) => x.id === li.dataset.cell);
+      if (c) map.flyTo(c.c, 17, { duration: 0.8 });
+    });
+    pollField();
+    setInterval(pollField, FIELD_POLL_MS);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) pollField();
+    });
+  }
+
+  // ---- нижняя шторка (меньше 760 px): свёрнута / половина / весь экран ---------------------------------
+
+  const MQ_MOBILE = window.matchMedia("(max-width: 760px)");
+  const SHEET_ORDER = ["peek", "half", "full"];
+  const SHEET_PEEK_PX = 86;
+  const SHEET_TOP_GAP_PX = 12;
+  const SHEET_DRAG_PX = 5;
+
+  function updateSheetMetrics() {
+    const h = $("#panel").getBoundingClientRect().height;
+    document.documentElement.style.setProperty("--sheet-h", `${Math.round(h)}px`);
+    if (map) map.invalidateSize();
+  }
+
+  function setSheet(state) {
+    const p = $("#panel");
+    p.style.height = "";
+    p.dataset.sheet = state;
+    $("#sheet-handle").setAttribute("aria-expanded", String(state !== "peek"));
+    setTimeout(updateSheetMetrics, 260); // после анимации высоты
+  }
+
+  function initSheet() {
+    const panel = $("#panel");
+    const handle = $("#sheet-handle");
+    let drag = null;
+    let justDragged = false;
+    const snapHeights = () => ({ peek: SHEET_PEEK_PX, half: window.innerHeight * 0.5, full: window.innerHeight - SHEET_TOP_GAP_PX });
+
+    handle.addEventListener("click", () => {
+      if (justDragged || !MQ_MOBILE.matches) return;
+      const i = SHEET_ORDER.indexOf(panel.dataset.sheet);
+      setSheet(SHEET_ORDER[(i + 1) % SHEET_ORDER.length]);
+    });
+    handle.addEventListener("pointerdown", (ev) => {
+      if (!MQ_MOBILE.matches) return;
+      drag = { y: ev.clientY, h: panel.getBoundingClientRect().height, moved: false };
+      handle.setPointerCapture(ev.pointerId);
+    });
+    handle.addEventListener("pointermove", (ev) => {
+      if (!drag) return;
+      const dy = drag.y - ev.clientY;
+      if (!drag.moved && Math.abs(dy) > SHEET_DRAG_PX) {
+        drag.moved = true;
+        panel.classList.add("dragging");
+      }
+      if (drag.moved) {
+        const s = snapHeights();
+        panel.style.height = Math.min(s.full, Math.max(s.peek, drag.h + dy)) + "px";
+        updateSheetMetrics();
+      }
+    });
+    const end = () => {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      panel.classList.remove("dragging");
+      if (!moved) return;
+      justDragged = true;
+      setTimeout(() => (justDragged = false), 0);
+      const h = panel.getBoundingClientRect().height;
+      const s = snapHeights();
+      const nearest = SHEET_ORDER.reduce((best, k) => (Math.abs(s[k] - h) < Math.abs(s[best] - h) ? k : best), "peek");
+      setSheet(nearest);
+    };
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    if (window.ResizeObserver) new ResizeObserver(() => MQ_MOBILE.matches && updateSheetMetrics()).observe(panel);
+    const onChange = () => {
+      panel.style.height = "";
+      if (MQ_MOBILE.matches) updateSheetMetrics();
+      else document.documentElement.style.removeProperty("--sheet-h");
+      if (map) setTimeout(() => map.invalidateSize(), 50);
+    };
+    (MQ_MOBILE.addEventListener ? MQ_MOBILE.addEventListener.bind(MQ_MOBILE, "change") : MQ_MOBILE.addListener.bind(MQ_MOBILE))(onChange);
+    window.addEventListener("orientationchange", () => setTimeout(onChange, 250));
+    onChange();
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     initMap();
     bindButtons();
     bindUpload();
     bindCandidatesTable();
     bindScenarioPanel();
+    initSheet();
+    initField();
     const el = document.getElementById("data");
     if (el) {
       try {

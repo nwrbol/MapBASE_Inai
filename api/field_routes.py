@@ -285,7 +285,7 @@ def clear_measurements(request: Request, confirm: str | None = None) -> dict:
 def get_version(request: Request) -> dict:
     """Лёгкий опрос со стороны основной карты."""
     store = _store(request)
-    return {"version": store.version(), "count": store.count()}
+    return {"version": store.version(), "count": store.count(), "by_source": store.count_by_source()}
 
 
 @router.get("/cell")

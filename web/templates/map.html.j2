@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Карта покрытия</title>
 {% if inline %}
 <style>{{ assets.leaflet_css | safe }}</style>
@@ -14,11 +14,13 @@
 </head>
 <body class="{{ 'server' if server_mode else 'standalone' }}">
 <div id="app">
-  <aside id="panel">
+  <aside id="panel" data-sheet="peek">
     <header class="panel-head">
+      <button type="button" id="sheet-handle" class="sheet-handle" aria-label="Шторка с данными: нажмите или перетащите" aria-expanded="false"><span></span></button>
       <h1>Карта покрытия</h1>
       <p class="sub">ТЗ 7 · INAI 2026 · v{{ version }} · <span id="mode-label">{{ 'веб-режим' if server_mode else 'автономный файл' }}</span></p>
       <button id="panel-toggle" class="icon-btn" aria-label="Свернуть панель" title="Свернуть панель">⟨</button>
+      <div class="sheet-summary" id="sheet-summary" aria-live="polite"><b id="ss-pair">—</b><span id="ss-cov"></span><span id="ss-drop"></span></div>
     </header>
 
     <div class="panel-body">
@@ -62,6 +64,22 @@
         <div id="manual-card" class="manual-card hidden"></div>
         <p id="sc-status" class="small muted" aria-live="polite"></p>
       </section>
+
+      {% if server_mode %}
+      <section class="card" id="field-card">
+        <h2>Полевые замеры</h2>
+        <label class="manual-toggle"><input type="checkbox" id="field-toggle"> Учитывать полевые замеры</label>
+        <p class="small muted" id="field-count">Загрузка…</p>
+        <p id="field-banner" class="sc-notice hidden" role="status"></p>
+        <p id="field-bestpair" class="sc-message hidden" role="status"></p>
+        <div id="field-changes-wrap" class="hidden">
+          <h3>Изменения</h3>
+          <ul class="field-changes" id="field-changes"></ul>
+        </div>
+        <div class="btn-row"><a class="btn" href="/field">Открыть форму</a></div>
+        <p class="small muted">Полевые замеры хранятся отдельно и не влияют на result.json: он считается только по исходным данным.</p>
+      </section>
+      {% endif %}
 
       <section class="card">
         <h2>Очистка</h2>
@@ -136,6 +154,7 @@
   </aside>
   <main id="map" aria-label="Карта покрытия"></main>
 </div>
+{% if server_mode %}<a href="/field" id="fab-field" class="fab" aria-label="Добавить полевой замер">＋ Замер</a>{% endif %}
 {% if data_json %}<script id="data" type="application/json">{{ data_json | safe }}</script>{% endif %}
 {% if inline %}
 <script>{{ assets.leaflet_js | safe }}</script>
