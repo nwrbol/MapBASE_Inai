@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import __version__
+from .geo import points_in_polygon
+from .grid import make_cell_id, projection
 from .pipeline import PipelineResult
 from .result import to_jsonable
 
@@ -23,6 +27,40 @@ VENDOR = STATIC / "vendor"
 
 def _cell_bounds(r: Any, d: int) -> list[float]:
     return [round(float(r.south), d), round(float(r.west), d), round(float(r.north), d), round(float(r.east), d)]
+
+
+def _empty_cells(pr: PipelineResult) -> list[dict]:
+    """Клетки без замеров для отображения на карте."""
+    s = pr.settings
+    b = s.bounds
+    proj = projection(s)
+    size = s.grid.cell_size_m
+    digits = s.output.coord_decimals
+    if b.polygon is None:
+        south, north, west, east = b.lat_min, b.lat_max, b.lon_min, b.lon_max
+    else:
+        lat, lon = zip(*b.polygon)
+        south, north, west, east = min(lat), max(lat), min(lon), max(lon)
+    x0, y0 = proj.to_xy(south, west)
+    x1, y1 = proj.to_xy(north, east)
+    xs = range(math.floor(round(x0 / size, 9)), math.ceil(round(x1 / size, 9)))
+    ys = range(math.floor(round(y0 / size, 9)), math.ceil(round(y1 / size, 9)))
+    # Не материализуем огромную сетку при произвольном размере клетки из веб-формы.
+    if len(xs) * len(ys) > 50_000:
+        return []
+    ix, iy = (axis.ravel() for axis in np.meshgrid(xs, ys))
+    if b.polygon is not None:
+        lat, lon = proj.to_latlon((ix + 0.5) * size, (iy + 0.5) * size)
+        inside = points_in_polygon(lat, lon, b.polygon)
+        ix, iy = ix[inside], iy[inside]
+    occupied = set(zip(pr.grid["ix"], pr.grid["iy"]))
+    south, west = proj.to_latlon(ix * size, iy * size)
+    north, east = proj.to_latlon((ix + 1) * size, (iy + 1) * size)
+    return [
+        {"id": make_cell_id(x, y, s), "b": [round(float(v), digits) for v in bounds]}
+        for x, y, *bounds in zip(ix, iy, south, west, north, east)
+        if (x, y) not in occupied
+    ]
 
 
 def build_map_data(pr: PipelineResult) -> dict:
@@ -91,6 +129,7 @@ def build_map_data(pr: PipelineResult) -> dict:
             "stats": pr.report["grid"],
             "worst": pr.report["worst_cells_detailed"],
             "cells": cells,
+            "empty_cells": _empty_cells(pr),
             "towers": [
                 {"id": t.id, "lat": float(t.lat), "lon": float(t.lon)} for t in pr.towers.itertuples(index=False)
             ],

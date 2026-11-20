@@ -93,11 +93,15 @@
     // 1. Сетка (только n >= min_samples)
     const grid = L.featureGroup();
     const insufficient = L.featureGroup();
+    const insufficientStyle = { color: "#777", weight: 0.4, dashArray: "2 2", fillColor: COLORS.grey, fillOpacity: 0.35 };
+    (d.empty_cells || []).forEach((c) => {
+      rect(c.b, insufficientStyle).bindInfo(`<b>${esc(c.id)}</b><br>Замеров: 0<br>Нет данных`).addTo(insufficient);
+    });
     d.cells.forEach((c) => {
       if (c.counted) {
         rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindInfo(cellTip(c)).addTo(grid);
       } else {
-        rect(c.b, { color: "#777", weight: 0.4, dashArray: "2 2", fillColor: COLORS.grey, fillOpacity: 0.35 }).bindInfo(cellTip(c)).addTo(insufficient);
+        rect(c.b, insufficientStyle).bindInfo(cellTip(c)).addTo(insufficient);
       }
     });
 
@@ -151,7 +155,7 @@
 
     const fieldLayer = buildFieldLayer(d);
     groups = { field: fieldLayer, grid, insufficient, worst, towers, cands, chosen, covered, ghost, lost, gained, heat, day, night, delta, worseNight };
-    [grid, covered, lost, towers, cands, ghost, chosen, worst].forEach((g) => g.addTo(map));
+    [insufficient, grid, covered, lost, towers, cands, ghost, chosen, worst].forEach((g) => g.addTo(map));
 
     layerControl = L.control.layers(null, {
       "Сетка 200 м (медиана RSRP)": grid,
