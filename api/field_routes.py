@@ -295,3 +295,52 @@ def get_cell(
     with st.field_lock:
         view = _view(st)
     return cell_lookup(view.pr, lat, lon)
+
+
+@router.get("/config")
+def get_field_config(request: Request) -> JSONResponse:
+    """Всё, что нужно странице /field: границы, пороги, часовой пояс и клетки (с учётом сохранённых полевых замеров)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    st = _state(request)
+    _default(request)
+    with st.field_lock:
+        view = _view(st)
+    s = view.pr.settings
+    d = s.output.coord_decimals
+    offset = datetime.now(ZoneInfo(s.daynight.timezone)).utcoffset()
+    b = s.bounds
+    cells = [
+        {
+            "id": r.cell_id,
+            "n": int(r.n),
+            "counted": bool(r.counted),
+            "cls": r.cls,
+            "m": round(float(r.median_rsrp), 2),
+            "b": [round(float(x), d) for x in (r.south, r.west, r.north, r.east)],
+        }
+        for r in view.pr.grid.itertuples(index=False)
+    ]
+    return JSONResponse(
+        to_jsonable(
+            {
+                "version": view.version,
+                "meta": {
+                    "bounds": {"lat_min": b.lat_min, "lat_max": b.lat_max, "lon_min": b.lon_min, "lon_max": b.lon_max},
+                    "polygon": b.polygon,
+                    "green_min": s.classes.green_min,
+                    "red_below": s.classes.red_below,
+                    "min_samples": s.grid.min_samples,
+                    "cell_size_m": s.grid.cell_size_m,
+                    "rsrp_min": s.cleaning.rsrp_min,
+                    "rsrp_max": s.cleaning.rsrp_max,
+                    "accuracy_warn_m": s.field_data.accuracy_warn_m,
+                    "max_batch": s.field_data.max_batch,
+                    "timezone": s.daynight.timezone,
+                    "utc_offset_minutes": int(offset.total_seconds() // 60) if offset else 0,
+                },
+                "cells": cells,
+            }
+        )
+    )

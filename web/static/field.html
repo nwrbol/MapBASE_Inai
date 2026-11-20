@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>Полевые замеры</title>
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/field.css">
+</head>
+<body>
+<header class="top">
+  <a class="back" href="/">← Карта</a>
+  <h1>Полевые замеры</h1>
+  <span class="count" id="count" title="Всего полевых замеров в базе">0</span>
+</header>
+
+<main>
+  <div class="mapwrap">
+    <div id="fmap" aria-label="Карта района"></div>
+    <button type="button" id="center-btn" class="map-btn">Центр района</button>
+  </div>
+
+  <details class="note" id="limits">
+    <summary>Почему RSRP вводится вручную?</summary>
+    <p>Веб-страница не может прочитать RSRP с модема телефона: у браузера нет такого API. Возьмите значение из инженерного меню или приложения. Способ «Файл» снимает это ограничение: RSRP там записывает само инженерное приложение (G-NetTrack, Network Cell Info и др.), мы только импортируем лог.</p>
+    <p>Полевые замеры хранятся отдельно и не влияют на <code>result.json</code>.</p>
+  </details>
+
+  <div class="tabs" role="tablist" aria-label="Способ добавления замера" id="method-tabs">
+    <button type="button" role="tab" data-m="pin" aria-selected="true">Метка</button>
+    <button type="button" role="tab" data-m="gps" aria-selected="false">GPS</button>
+    <button type="button" role="tab" data-m="manual" aria-selected="false">Вручную</button>
+  </div>
+
+  <!-- Метка -->
+  <section class="method" id="m-pin">
+    <p class="hint">Тапните по карте: появится метка. Её можно перетащить.</p>
+  </section>
+
+  <!-- GPS -->
+  <section class="method hidden" id="m-gps">
+    <button type="button" class="btn primary wide" id="gps-btn">Определить моё местоположение</button>
+    <p class="gps-status" id="gps-status" aria-live="polite"></p>
+  </section>
+
+  <!-- Вручную -->
+  <section class="method hidden" id="m-manual">
+    <div class="subtabs" role="tablist" aria-label="Режим ручного ввода" id="manual-tabs">
+      <button type="button" role="tab" data-s="fields" aria-selected="true">Поля формы</button>
+      <button type="button" role="tab" data-s="paste" aria-selected="false">Вставить строки</button>
+    </div>
+    <div id="manual-fields">
+      <div class="row2">
+        <label>Широта
+          <input id="in-lat" inputmode="decimal" autocomplete="off" placeholder="42.851200" aria-describedby="coord-hint">
+        </label>
+        <label>Долгота
+          <input id="in-lon" inputmode="decimal" autocomplete="off" placeholder="74.580300">
+        </label>
+      </div>
+      <p class="hint" id="coord-hint">Запятая заменяется на точку. Можно и тапнуть по карте.</p>
+    </div>
+    <div id="manual-paste" class="hidden">
+      <label for="paste-text">Строки <code>lat,lon,rsrp_dbm,timestamp</code> (как в measurements.csv)</label>
+      <textarea id="paste-text" rows="5" autocomplete="off" spellcheck="false" placeholder="42.851200,74.580300,-112,2026-11-20T22:15:00+06:00"></textarea>
+      <p class="hint">Пример (нажмите, чтобы подставить): <button type="button" class="linklike" id="paste-example">42.851200,74.580300,-112,2026-11-20T22:15:00+06:00</button></p>
+      <button type="button" class="btn wide" id="paste-check">Проверить</button>
+      <div id="paste-result" class="paste-result"></div>
+    </div>
+  </section>
+
+  <!-- Общая часть: клетка, RSRP, время (для Метки, GPS и ручных полей) -->
+  <section class="card" id="common">
+    <div class="cellinfo" id="cellinfo" aria-live="polite">Выберите точку на карте.</div>
+    <div class="coords" id="coords"></div>
+
+    <div class="field">
+      <div class="lbl">RSRP, дБм</div>
+      <div class="rsrp">
+        <button type="button" class="step" data-d="-5" aria-label="Уменьшить на 5">−5</button>
+        <button type="button" class="step" data-d="-1" aria-label="Уменьшить на 1">−1</button>
+        <div class="rsrp-input"><span aria-hidden="true">−</span><input id="rsrp-abs" inputmode="decimal" autocomplete="off" aria-label="RSRP, модуль в дБм"></div>
+        <button type="button" class="step" data-d="1" aria-label="Увеличить на 1">+1</button>
+        <button type="button" class="step" data-d="5" aria-label="Увеличить на 5">+5</button>
+        <span class="dot" id="rsrp-dot" title="Класс по порогам"></span>
+      </div>
+      <input type="range" id="rsrp-range" min="-140" max="-44" step="1" aria-label="RSRP ползунок">
+    </div>
+
+    <div class="field">
+      <div class="lbl">Время</div>
+      <div class="timerow">
+        <span id="time-label"></span>
+        <button type="button" class="linklike" id="time-change">изменить</button>
+      </div>
+      <input type="datetime-local" id="time-input" class="hidden" aria-label="Время замера">
+    </div>
+
+    <label class="field">
+      <span class="lbl">Подпись инженера (необязательно)</span>
+      <input id="device-label" maxlength="50" autocomplete="off" placeholder="например, Айбек, Redmi Note">
+    </label>
+  </section>
+
+  <section class="card">
+    <h2>Последние замеры <span class="muted">(с этого устройства)</span></h2>
+    <ul id="recent" class="recent"></ul>
+    <p class="muted small" id="recent-empty">Пока пусто.</p>
+  </section>
+</main>
+
+<div id="toasts" aria-live="polite" role="status"></div>
+<div class="submitbar">
+  <button type="button" class="btn primary wide" id="submit" disabled>Отправить замер</button>
+</div>
+
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/field.js"></script>
+</body>
+</html>
