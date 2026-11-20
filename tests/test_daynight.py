@@ -109,3 +109,25 @@ def test_delta_insufficient_complements_delta(client):
         assert {"id", "b", "n_day", "n_night"} <= set(c)
         assert by_id[c["id"]]["counted"] and (c["n_day"] < min_n or c["n_night"] < min_n)
     assert len(dn["delta"]) == dn["common_cells"]
+
+
+def test_grey_cells_cover_every_cell_without_color(client):
+    d = client.get("/api/mapdata").json()
+    grey = [c for c in d["cells"] if not c["counted"]]
+    district = len(d["cells"]) + len(d["empty_cells"])
+    assert len(grey) + len(d["empty_cells"]) == district - d["stats"]["cells_counted"]
+    dn = d["daynight"]
+    min_n = d["meta"]["min_samples"]
+    for half, key in (("day_cells", "day_insufficient"), ("night_cells", "night_insufficient")):
+        assert len(dn[half]) + len(dn[key]) == district  # в слое нет «дыр»
+        assert all(c["n"] < min_n for c in dn[key])
+
+
+def test_overlays_have_no_insufficient_layer():
+    src = (ROOT / "web" / "static" / "layers.js").read_text(encoding="utf-8")
+    assert 'key: "insufficient"' not in src
+    import typing
+
+    from coverage.assistant import tools
+
+    assert "insufficient" not in typing.get_args(tools.Layer)

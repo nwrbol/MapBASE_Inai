@@ -37,7 +37,7 @@
   const LAYERS_STORAGE_KEY = "coverage-layers-v1";
   const LEGEND_STORAGE_KEY = "coverage-legend-collapsed-v1";
   // порядок добавления на карту = порядок отрисовки снизу вверх
-  const Z_ORDER = ["insufficient", "grid", "day", "night", "delta", "worseNight", "covered", "gained", "lost", "towers", "cands", "ghost", "chosen", "worst", "heat", "field"];
+  const Z_ORDER = ["grid", "day", "night", "delta", "worseNight", "covered", "gained", "lost", "towers", "cands", "ghost", "chosen", "worst", "heat", "field"];
   let current = null; // текущие данные карты
   let lastClicked = null;
   let analysisId = null; // id анализа загруженных файлов (веб-режим)
@@ -112,17 +112,20 @@
 
     // 1. Сетка (только n >= min_samples)
     const grid = L.featureGroup();
-    const insufficient = L.featureGroup();
-    const insufficientStyle = { color: "#777", weight: 0.4, dashArray: "2 2", fillColor: COLORS.grey, fillOpacity: 0.35 };
+    // серые клетки района (нет замеров или n < min_samples) рисуются в основной сетке и ПОД цветными
+    const greyStyle = { color: "#777", weight: 0.4, fillColor: COLORS.grey, fillOpacity: 0.35 };
+    const emptyStyle = { color: "#777", weight: 0.4, dashArray: "2 2", fillColor: COLORS.grey, fillOpacity: 0.2 };
     (d.empty_cells || []).forEach((c) => {
-      rect(c.b, insufficientStyle).bindInfo(`<b>${esc(c.id)}</b><br>Замеров: 0<br>Нет данных`).addTo(insufficient);
+      rect(c.b, emptyStyle).bindInfo(`<b>${esc(c.id)}</b><br>Нет замеров`).addTo(grid);
     });
-    d.cells.forEach((c) => {
-      if (c.counted) {
-        rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindInfo(cellTip(c)).on("click", () => { lastClicked = {type:"cell", id:c.id}; }).addTo(grid);
-      } else {
-        rect(c.b, insufficientStyle).bindInfo(cellTip(c)).on("click", () => { lastClicked = {type:"cell", id:c.id}; }).addTo(insufficient);
-      }
+    d.cells.filter((c) => !c.counted).forEach((c) => {
+      rect(c.b, greyStyle)
+        .bindInfo(`<b>${esc(c.id)}</b> · замеров: ${c.n} · цвет не определяется (нужно ≥ ${m.min_samples})`)
+        .on("click", () => { lastClicked = { type: "cell", id: c.id }; })
+        .addTo(grid);
+    });
+    d.cells.filter((c) => c.counted).forEach((c) => {
+      rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindInfo(cellTip(c)).on("click", () => { lastClicked = { type: "cell", id: c.id }; }).addTo(grid);
     });
 
     // 2. Топ-3 худших
@@ -154,13 +157,18 @@
     // 6. Бонусы: тепловая карта, день/ночь
     const heat = L.heatLayer ? L.heatLayer(d.heat, { radius: 14, blur: 16, maxZoom: 17, minOpacity: 0.25 }) : L.layerGroup();
     const dn = d.daynight || {};
-    const dnLayer = (cells) => {
+    const dnLayer = (cells, grey, half) => {
       const g = L.featureGroup();
+      (grey || []).forEach((c) =>
+        rect(c.b, c.n ? greyStyle : emptyStyle)
+          .bindInfo(`<b>${esc(c.id)}</b> · ${half}: замеров ${c.n} · цвет не определяется (нужно ≥ ${m.min_samples})`)
+          .addTo(g)
+      );
       (cells || []).forEach((c) => rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.55 }).bindInfo(cellTip(c)).addTo(g));
       return g;
     };
-    const day = dnLayer(dn.day_cells);
-    const night = dnLayer(dn.night_cells);
+    const day = dnLayer(dn.day_cells, dn.day_insufficient, "днём");
+    const night = dnLayer(dn.night_cells, dn.night_insufficient, "ночью");
     const delta = L.featureGroup();
     const bins = m.daynight_delta_bins || CL.DEFAULT_BINS;
     const deltaItems = CL.deltaLegendItems(bins);
@@ -183,7 +191,7 @@
     });
 
     const fieldLayer = buildFieldLayer(d);
-    groups = { field: fieldLayer, grid, insufficient, worst, towers, cands, chosen, covered, ghost, lost, gained, heat, day, night, delta, worseNight };
+    groups = { field: fieldLayer, grid, worst, towers, cands, chosen, covered, ghost, lost, gained, heat, day, night, delta, worseNight };
     layerKeyOf = new Map(Object.entries(groups).map(([k, g]) => [g, k]));
     // слой попадает в переключатель, только если для него есть данные
     available = new Set(CL.KEYS.filter((k) => groups[k]));
@@ -432,7 +440,13 @@
       mainRows.push(row(swatch(COLORS.yellow), `${mn(m.red_below)} … ${mn(m.green_min)}`));
       mainRows.push(row(swatch(COLORS.red), `< ${mn(m.red_below)} (слабая зона)`));
     }
-    if (sec.insufficient) mainRows.push(row(swatch(COLORS.grey), `n < ${m.min_samples}, не учитывается`));
+    if (sec.nodata) {
+      const faint = swatch("rgba(156,163,175,.2)", "#777");
+      faint.style.borderStyle = "dashed";
+      const r = el("div", "lg-row");
+      r.append(swatch("rgba(156,163,175,.35)", "#777"), faint, document.createTextNode(`▨ нет данных или n < ${m.min_samples}: цвет не определяется`));
+      mainRows.push(r);
+    }
     if (sec.worst) mainRows.push(row(swatch("transparent", "var(--text)"), "топ-3 худших клетки (#1…#3)"));
     if (sec.covered) mainRows.push(row(lineSwatch("2px solid #1d4ed8"), "покрыта парой"));
     if (sec.towers) mainRows.push(row(lineSwatch("2px dashed var(--text)"), `запрет ${m.tower_exclusion_m} м от БС`));
@@ -498,7 +512,7 @@
     $("#cls-bars").innerHTML = ["green", "yellow", "red"]
       .map((k) => `<span style="flex:${s[k]};background:${COLORS[k]}" title="${CLS_RU[k]}: ${s[k]}">${s[k] / tot > 0.06 ? s[k] : ""}</span>`)
       .join("");
-    $("#cells-note").textContent = `Клеток с замерами: ${s.cells_total}; учитываются (n ≥ ${d.meta.min_samples}): ${s.cells_counted}; зелёных ${s.green}, жёлтых ${s.yellow}, красных ${s.red}; отброшено по n: ${s.cells_insufficient}.`;
+    $("#cells-note").textContent = `Учитываются (n ≥ ${d.meta.min_samples}): ${s.cells_counted} · серые: n<${d.meta.min_samples} — ${s.cells_insufficient}, без замеров — ${(d.empty_cells || []).length} · зелёных ${s.green}, жёлтых ${s.yellow}, красных ${s.red}.`;
 
     const byId = Object.fromEntries(d.cells.map((c) => [c.id, c]));
     $("#t-worst tbody").innerHTML = d.worst

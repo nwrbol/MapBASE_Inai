@@ -104,6 +104,14 @@ def build_map_data(pr: PipelineResult) -> dict:
         ]
 
     bounds_by_id = {c["id"]: c["b"] for c in cells}
+
+    def dn_insufficient(g: Any) -> list[dict]:
+        """Клетки района, где в этой половине суток нет замеров или их меньше min_samples (id, границы, n)."""
+        ns = {r.cell_id: int(r.n) for r in g.itertuples(index=False)}
+        ok = {r.cell_id for r in g.itertuples(index=False) if bool(r.counted)}
+        every = [*cells, *_empty_cells(pr)]
+        return [{"id": c["id"], "b": c["b"], "n": ns.get(c["id"], 0)} for c in every if c["id"] not in ok]
+
     by_day = grids["day"].set_index("cell_id")
     by_night = grids["night"].set_index("cell_id")
     delta = []
@@ -170,6 +178,8 @@ def build_map_data(pr: PipelineResult) -> dict:
                 **pr.report["daynight"],
                 "day_cells": dn_cells(grids["day"]),
                 "night_cells": dn_cells(grids["night"]),
+                "day_insufficient": dn_insufficient(grids["day"]),
+                "night_insufficient": dn_insufficient(grids["night"]),
                 "delta": delta,
                 "delta_insufficient": delta_insufficient,
             },

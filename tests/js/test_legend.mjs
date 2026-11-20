@@ -33,7 +33,6 @@ test("окно дня берётся из данных", () => {
   assert.equal(L.dayWindowText("[8:30, 21:00) UTC"), "08:30–21:00");
   assert.equal(L.dayShort("[08:00, 20:00) Asia/Bishkek"), "08–20");
   assert.equal(L.labelOf("day", { window: "[07:00, 19:00) X" }), "День (07–19)");
-  assert.equal(L.labelOf("insufficient", { minSamples: 7 }), "Недостаточно данных (n<7)");
 });
 
 test("legendSections: пусто, grid, delta, worseNight", () => {
@@ -63,7 +62,10 @@ test("legendSections: день или ночь добавляют пояснен
   assert.equal(L.legendSections(new Set(["night"])).window, true);
   assert.equal(L.legendSections(new Set(["day"])).rsrp, true);
   assert.equal(L.legendSections(new Set(["heat"])).heat, true);
-  assert.equal(L.legendSections(new Set(["insufficient"])).insufficient, true);
+  assert.equal(L.legendSections(new Set(["grid"])).nodata, true);
+  assert.equal(L.legendSections(new Set(["heat"])).nodata, false);
+  assert.ok(!L.KEYS.includes("insufficient"));
+  assert.equal(L.parseLayersParam("insufficient"), null);
 });
 
 test("хеш #layers=…: разбор и запись", () => {
@@ -81,7 +83,7 @@ test("набор по умолчанию и сравнение наборов", 
   assert.ok(L.isDefaultSet(new Set(L.DEFAULT_KEYS)));
   assert.ok(!L.isDefaultSet(new Set()));
   for (const k of ["grid", "worst", "towers", "cands", "chosen", "covered"]) assert.ok(L.DEFAULT_KEYS.includes(k), k);
-  for (const k of ["heat", "day", "night", "delta", "worseNight", "insufficient"]) assert.ok(!L.DEFAULT_KEYS.includes(k), k);
+  for (const k of ["heat", "day", "night", "delta", "worseNight"]) assert.ok(!L.DEFAULT_KEYS.includes(k), k);
   const a = L.activeAvailable(new Set(["grid", "delta"]), new Set(["grid"]));
   assert.deepEqual([...a], ["grid"]); // недоступные слои не учитываются
 });

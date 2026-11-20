@@ -27,7 +27,6 @@
     { key: "night", defaultOn: false, label: () => "Ночь" },
     { key: "delta", defaultOn: false, label: () => `Δ ночь ${MINUS} день` },
     { key: "worseNight", defaultOn: false, label: () => "Красные только ночью" },
-    { key: "insufficient", defaultOn: false, label: (c) => `Недостаточно данных (n<${c.minSamples})` },
     // полевые замеры (только когда они включены в карту)
     { key: "field", defaultOn: true, label: () => "Полевые замеры (◆ метка, ● GPS, ■ вручную, ▲ импорт)" },
   ];
@@ -131,7 +130,7 @@
     const on = (k) => active.has(k);
     const s = {
       rsrp: on("grid") || on("day") || on("night"),
-      insufficient: on("insufficient"),
+      nodata: on("grid") || on("day") || on("night"),
       worst: on("worst"),
       covered: on("covered"),
       towers: on("towers"),

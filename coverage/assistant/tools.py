@@ -26,7 +26,6 @@ Layer = Literal[
     "night",
     "delta",
     "worseNight",
-    "insufficient",
     "field",
 ]
 Tab = Literal["overview", "coverage", "planning", "data", "assistant"]
@@ -306,7 +305,6 @@ LAYER_NAMES = dict(
     night="ночь",
     delta="разница день/ночь",
     worseNight="слабые ночью",
-    insufficient="мало данных",
     field="полевые замеры",
     none="выключены",
     default="по умолчанию",
