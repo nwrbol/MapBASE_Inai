@@ -1,0 +1,13 @@
+{
+  "view": {"bounds": [42.846, 74.566, 42.869, 74.601], "center": [42.858, 74.584], "zoom": 15},
+  "active_layers": ["grid", "worst", "towers", "cands", "chosen", "covered"],
+  "open_tab": "assistant",
+  "plan": {"pair": ["C09", "C14"], "covered": 111, "delta": 0, "source": "tz", "pending": false},
+  "preview_pair": null,
+  "constraints": {"excluded": [{"id": "C09", "reason": "собственник против", "category": "other"}], "required": []},
+  "selected_pair": null,
+  "last_clicked": {"type": "cell", "id": "X006_Y013"},
+  "field_included": false,
+  "panel_width": 440,
+  "is_mobile": false
+}

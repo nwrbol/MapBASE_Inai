@@ -50,6 +50,8 @@ class View(Input):
 class Plan(Input):
     pair: Annotated[list[Id], Field(max_length=2)] | None = None
     covered: int | None = None
+    delta: int | None = None
+    pending: bool = False
     source: Annotated[str, Field(max_length=32)] = "tz"
 
 
@@ -76,6 +78,7 @@ class MapState(Input):
     plan: Plan = Plan()
     constraints: Restrictions = Restrictions()
     selected_pair: Annotated[list[Id], Field(max_length=2)] | None = None
+    preview_pair: Annotated[list[Id], Field(max_length=2)] | None = None
     last_clicked: Click | None = None
     field_included: bool = False
     panel_width: int | None = None

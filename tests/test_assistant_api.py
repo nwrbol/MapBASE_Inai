@@ -48,3 +48,20 @@ def test_provider_errors(status, message, monkeypatch):
         assert len(calls) == (2 if status == 429 else 1)
     finally:
         client.http.close()
+
+
+def test_chat_accepts_exact_frontend_map_state(tmp_path, monkeypatch):
+    import json
+
+    from tests.conftest import FIXTURES
+
+    state = json.loads((FIXTURES / "map_state_example.json").read_text(encoding="utf-8"))
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    with TestClient(create_app(data_dir=OPEN_DATA, field_db_path=tmp_path / "field.db")) as c:
+        provider = c.app.state.groq
+        provider.key = "private-test-token"
+        monkeypatch.setattr(provider, "complete", lambda *_: {"choices": [{"message": {"content": "Готово"}}]})
+        r = c.post("/api/assistant/chat", json={**QUESTION, "map_state": state})
+        assert r.status_code == 200, r.text
+        bad = {**state, "unknown_key": 1}
+        assert c.post("/api/assistant/chat", json={**QUESTION, "map_state": bad}).status_code == 422

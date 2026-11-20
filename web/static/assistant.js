@@ -162,7 +162,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       const res=await fetch("/api/assistant/chat",{method:"POST",headers:{"Content-Type":"application/json","X-Device-Id":device},
         body:JSON.stringify({messages:history.map(m=>({...m,content:m.content.slice(0,2000)})),map_state:state,analysis_id:dataset,include_field:state.field_included}),signal:ctrl.signal});
       const data=await res.json();
-      if (!res.ok) throw new Error(typeof data.detail==="string"?data.detail:"Не удалось обработать вопрос");
+      if (!res.ok) {
+        if (res.status===422) { console.error("assistant 422:",data.detail); throw new Error("Не удалось отправить вопрос (ошибка данных)"); }
+        throw new Error(typeof data.detail==="string"?data.detail:"Не удалось обработать вопрос");
+      }
       history.push({role:"assistant",content:data.reply}); save();
       await applyActions(data.actions,bubble("assistant",data.reply),state,dataset);
     } catch(e) {
