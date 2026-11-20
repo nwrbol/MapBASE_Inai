@@ -24,6 +24,10 @@ def test_health(client):
 def test_index_page(client):
     r = client.get("/")
     assert r.status_code == 200
+    assert 'href="/map"' in r.text
+    assert "Как работает проект" in r.text
+    r = client.get("/map")
+    assert r.status_code == 200
     assert "/static/app.js" in r.text
 
 

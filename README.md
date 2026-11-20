@@ -32,7 +32,7 @@ python run.py --data-dir path/to/hidden --out out/
 python run.py --measurements m.csv --towers t.csv --candidates c.csv --bounds bounds.json --config config.yaml
 ```
 
-Веб-интерфейс (FastAPI) с загрузкой своих CSV, открывается на http://127.0.0.1:8000, OpenAPI на `/docs`:
+Веб-интерфейс (FastAPI) с загрузкой своих CSV, открывается на http://127.0.0.1:8000. Маршруты: `/` главная (описание проекта и сводка), `/map` интерактивная карта, `/field` полевые замеры, `/docs` OpenAPI:
 
 ```bash
 python run.py --serve
@@ -41,8 +41,10 @@ python run.py --serve
 Деплой (Render, Railway, Heroku и т. п.): точка входа `main.py` в корне, команда запуска есть в `Procfile`:
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port $PORT
+uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
 ```
+
+Один воркер нужен намеренно: база полевых замеров, блокировки и кэш пересчёта живут в одном процессе.
 
 Сводка в консоли на открытом наборе:
 
@@ -275,7 +277,10 @@ CLI и API вызывают одну и ту же `run_pipeline`, поэтому
 
 | Метод | Путь | Что возвращает |
 |---|---|---|
-| GET | `/` | интерактивная карта |
+| GET | `/` | главная: описание проекта и сводка по исходным данным |
+| GET | `/map` | интерактивная карта |
+| GET | `/field` | мобильная страница сбора полевых замеров |
+| GET | `/docs` | OpenAPI |
 | GET | `/health` | `{"status": "ok"}` |
 | GET | `/api/result`, `/api/report` | `result.json`, `report.json` для `data/` |
 | GET | `/api/grid` | GeoJSON клеток (`cell_id, n, median_rsrp, cls, is_worst, covered`) |

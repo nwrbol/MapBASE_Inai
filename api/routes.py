@@ -15,7 +15,7 @@ from coverage.config import Settings, load_settings
 from coverage.errors import DataValidationError, ScenarioError
 from coverage.field_store import FieldStore
 from coverage.pipeline import Inputs, PipelineResult, run_pipeline
-from coverage.render import build_map_data, render_page
+from coverage.render import build_map_data, render_home, render_page
 from coverage.result import dumps, to_jsonable
 from coverage.scenario import Constraints, Refusal, evaluate_manual, impact_of_refusals, run_scenario
 
@@ -130,7 +130,12 @@ async def _read_upload(upload: UploadFile, name: str) -> bytes:
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def index() -> HTMLResponse:
+def index(request: Request) -> HTMLResponse:
+    return HTMLResponse(render_home(_default(request).map_data))
+
+
+@router.get("/map", response_class=HTMLResponse, include_in_schema=False)
+def map_page() -> HTMLResponse:
     return HTMLResponse(render_page(None, server_mode=True))
 
 

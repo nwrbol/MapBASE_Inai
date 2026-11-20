@@ -45,10 +45,23 @@ def test_standalone_map_html_embeds_bins_and_layers_script():
     assert "CoverageLayers" in html and "deltaLegendItems" in html  # layers.js встроен, без внешних файлов
 
 
-def test_index_loads_layers_script_before_app(client):
-    html = client.get("/").text
+def test_map_page_loads_layers_script_before_app(client):
+    html = client.get("/map").text
     assert html.index("/static/layers.js") < html.index("/static/app.js")
     assert client.get("/static/layers.js").status_code == 200
+
+
+def test_home_page_links(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'href="/map"' in r.text and 'href="/field"' in r.text
+
+
+def test_map_page_has_core_scripts(client):
+    html = client.get("/map").text
+    for s in ("/static/theme.css", "/static/style.css", "/static/layers.js", "/static/app.js"):
+        assert s in html
+    assert html.index("/static/layers.js") < html.index("/static/app.js")
 
 
 def test_result_json_unchanged(client):
