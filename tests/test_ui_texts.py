@@ -96,3 +96,24 @@ def test_map_page_has_panel_resizer_and_single_width_source(client):
         and "width: 440px; min-width: 440px" not in css
     )
     assert "margin-left: -344px" not in css and "margin-left: -404px" not in css
+
+
+def test_assistant_sources_have_no_internal_wording():
+    files = [
+        *(ROOT / "coverage" / "assistant").glob("*.py"),
+        ROOT / "api" / "assistant_routes.py",
+        ROOT / "scripts" / "assistant_smoke.py",
+    ]
+    assert files
+    for f in files:
+        m = FORBIDDEN.search(f.read_text(encoding="utf-8"))
+        assert not m, (f.name, m.group(0))
+
+
+def test_assistant_css_does_not_override_panel_width():
+    css = (ROOT / "web" / "static" / "assistant.css").read_text(encoding="utf-8")
+    assert "chat-panel-width" not in css
+    import re as _re
+
+    for rule in _re.findall(r"([^{}]*#panel[^{}]*)\{([^}]*)\}", css):
+        assert "width" not in rule[1] and "margin-left" not in rule[1], rule

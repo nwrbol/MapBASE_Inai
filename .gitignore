@@ -14,6 +14,8 @@ data/field.db-wal
 data/field.db-shm
 *.db
 
-# пользовательские результаты: официальный остаётся result.json (по ТЗ)
+# пользовательские результаты: официальный остаётся result.json
 result_selected.json
 scenario.json
+
+.env

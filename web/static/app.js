@@ -39,6 +39,7 @@
   // порядок добавления на карту = порядок отрисовки снизу вверх
   const Z_ORDER = ["insufficient", "grid", "day", "night", "delta", "worseNight", "covered", "gained", "lost", "towers", "cands", "ghost", "chosen", "worst", "heat", "field"];
   let current = null; // текущие данные карты
+  let lastClicked = null;
   let analysisId = null; // id анализа загруженных файлов (веб-режим)
 
   function initMap() {
@@ -118,9 +119,9 @@
     });
     d.cells.forEach((c) => {
       if (c.counted) {
-        rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindInfo(cellTip(c)).addTo(grid);
+        rect(c.b, { color: "#555", weight: 0.4, fillColor: COLORS[c.cls], fillOpacity: 0.5 }).bindInfo(cellTip(c)).on("click", () => { lastClicked = {type:"cell", id:c.id}; }).addTo(grid);
       } else {
-        rect(c.b, insufficientStyle).bindInfo(cellTip(c)).addTo(insufficient);
+        rect(c.b, insufficientStyle).bindInfo(cellTip(c)).on("click", () => { lastClicked = {type:"cell", id:c.id}; }).addTo(insufficient);
       }
     });
 
@@ -1340,6 +1341,7 @@
           fillColor: c.admissible ? "#3b82f6" : "#d1d5db", fillOpacity: 0.9,
         }).bindTooltip(c.id).addTo(groups.cands);
       }
+      layer.on("click", () => { lastClicked = {type:"candidate", id:c.id}; });
       if (scenario.manual) {
         layer.on("click", () => pickCandidate(c.id));
       } else {
@@ -1663,6 +1665,84 @@
     window.addEventListener("orientationchange", () => setTimeout(onChange, 250));
     onChange();
   }
+
+  // Адаптер чата: состояние и те же операции, которыми пользуется панель.
+  if (SERVER) window.MapApp = {
+    get analysisId() { return analysisId; },
+    getState() {
+      if (!current) throw new Error("Дождитесь загрузки карты");
+      const b = map.getBounds(), c = map.getCenter();
+      const p = SC.currentPlan({ selected: scenario.selected, result: scenario.result, excluded: scenario.excluded, required: scenario.required }, current);
+      return {
+        view: {bounds:[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()], center:[c.lat,c.lng], zoom:map.getZoom()},
+        active_layers:[...activeKeys], open_tab:$(".panel-nav [aria-pressed=true]").getAttribute("aria-controls").slice(6),
+        plan:{pair:p.pair, covered:p.covered, delta:p.delta, source:p.source, pending:!!p.pending}, preview_pair:scenario.preview || null,
+        constraints:constraintsPayload(), selected_pair:scenario.selected, last_clicked:lastClicked,
+        field_included:fieldOn, panel_width:$("#panel").offsetWidth, is_mobile:MQ_MOBILE.matches,
+      };
+    },
+    openTab(tab) {
+      const button = document.getElementById("panel-navigation").querySelector(`[aria-controls="panel-${CSS.escape(tab)}"]`);
+      if (!button) throw new Error("Раздел недоступен");
+      button.click();
+    },
+    setActiveLayers(keys) { setActive(keys); },
+    flyToTarget(target, zoom=16) {
+      const cell = current.cells.find(c => c.id === target);
+      const site = [...current.candidates,...current.towers].find(c => c.id === target);
+      const point = cell?.c || (site && [site.lat,site.lon]) || (typeof target === "object" && [target.lat,target.lon]);
+      if (!point) throw new Error("Объект не найден");
+      map.flyTo(point, zoom);
+      L.popup({autoPan:false}).setLatLng(point).setContent(cell ? cellTip(cell) : site ? esc(site.id) : "Точка").openOn(map);
+    },
+    fitView(what) {
+      if (what === "district") return tryFit();
+      const points = what === "plan" ? current.candidates.filter(c => displayPair()?.includes(c.id)).map(c => [c.lat,c.lon])
+        : current.cells.filter(c => what === "worst" ? c.rank : c.counted && c.cls === "red").map(c => c.c);
+      if (!points.length) throw new Error("Нет точек для показа");
+      map.fitBounds(points,{padding:[24,24],maxZoom:17});
+    },
+    setCandidateStatus(id,status,reason) {
+      if (!current.candidates.some(c => c.id === id && c.admissible)) throw new Error("Площадка недоступна");
+      setStatus(id,status);
+      if (statusOf(id) !== status) throw new Error("Не удалось изменить статус");
+      if (status === "excluded" && reason) { refusalOf(id).reason = reason; persist(); renderCandidatesTable(); }
+    },
+    selectPair(a,b) {
+      if (!pairInfo([a,b]) || [a,b].some(refusalOf) || !scenario.required.every(i => [a,b].includes(i))) throw new Error("Пара недоступна");
+      scenario.selected=[a,b]; scenario.preview=null; renderScenario();
+    },
+    resetPlan() { resetToTz(); },
+    async setFieldIncluded(on) {
+      if (analysisId && on) throw new Error("Полевые замеры доступны для исходного набора");
+      if (fieldOn === on) return;
+      setFieldToggle(on);
+      try { await loadDefault({keepView:true, highlight:on}); } catch (e) { setFieldToggle(!on); throw e; }
+    },
+    highlightCells(ids, seconds=5) {
+      const layer=L.featureGroup();
+      ids.forEach(id => {
+        const cell=cacheFor(current).cellById[id];
+        if (!cell) throw new Error("Клетка недоступна");
+        rect(cell.b,{color:"#bb7800",weight:4,fill:false,interactive:false}).addTo(layer);
+      });
+      layer.addTo(map);
+      setTimeout(() => map.removeLayer(layer),seconds*1000);
+      return () => map.removeLayer(layer);
+    },
+    setPanelWidth(px) {
+      if (MQ_MOBILE.matches) return;
+      setPanelWidth(px); // общая функция блока «ширина панели»: пределы, localStorage, разделитель, invalidateSize
+    },
+    async restore(s) {
+      await this.setFieldIncluded(s.field_included);
+      applyConstraints(s.constraints,[]);
+      if (s.selected_pair) this.selectPair(...s.selected_pair);
+      this.setActiveLayers(s.active_layers); this.setPanelWidth(s.panel_width);
+      map.stop().setView(s.view.center,s.view.zoom,{animate:false}); map.closePopup();
+      this.openTab(s.open_tab);
+    },
+  };
 
   function bindPanelNavigation() {
     const buttons = [...document.querySelectorAll(".panel-nav button")];

@@ -123,7 +123,7 @@ def _view(st: AppState) -> FieldView:
     return view
 
 
-def field_map_data(request: Request) -> dict:
+def field_map_view(request: Request) -> FieldView:
     """/api/mapdata?include_field=true."""
     st = _state(request)
     a = _default(request)
@@ -133,7 +133,11 @@ def field_map_data(request: Request) -> dict:
             view.map_data = build_field_map_data(
                 a.map_data, a.pr, view.pr, view.field_df, view.diff, view.version, st.field_store.count()["by_source"]
             )
-        return view.map_data
+        return view
+
+
+def field_map_data(request: Request) -> dict:
+    return field_map_view(request).map_data
 
 
 @page_router.get("/field", include_in_schema=False)

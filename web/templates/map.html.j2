@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/assistant.css">
 {% endif %}
 </head>
 <body class="{{ 'server' if server_mode else 'standalone' }}">
@@ -37,10 +38,28 @@
       <button type="button" aria-controls="panel-coverage" aria-pressed="false">Покрытие</button>
       <button type="button" aria-controls="panel-planning" aria-pressed="false">Площадки</button>
       <button type="button" aria-controls="panel-data" aria-pressed="false">Данные</button>
+      {% if server_mode %}<button type="button" aria-controls="panel-assistant" aria-pressed="false">ИИ-ассистент</button>{% endif %}
     </nav>
     <div class="panel-body">
       <section id="err" class="card error hidden"></section>
 
+      {% if server_mode %}
+      <section class="panel-page card" id="panel-assistant" hidden>
+        <h2>ИИ-ассистент</h2>
+        <p id="chat-status" role="status">Проверяем доступность…</p>
+        <div id="chat-controls" hidden>
+          <button class="btn" type="button" id="chat-clear">Очистить</button>
+          <div id="chat-log" role="log" aria-live="polite"></div>
+          <div id="chat-suggestions"></div>
+          <form id="chat-form">
+            <textarea id="chat-input" rows="1" maxlength="2000" placeholder="Спросите о карте…" aria-label="Сообщение ассистенту"></textarea>
+            <button class="btn primary" aria-label="Отправить">Отправить</button>
+            <button class="btn" type="button" id="chat-stop" hidden>Остановить</button>
+          </form>
+          <small>Enter — отправить · Shift+Enter — новая строка</small>
+        </div>
+      </section>
+      {% endif %}
       <div class="panel-page" id="panel-overview">
         <section class="card">
           <h2>Итог</h2>
@@ -199,6 +218,7 @@
 <script src="/static/layers.js"></script>
 <script src="/static/scenario.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/assistant.js"></script>
 {% endif %}
 </body>
 </html>
