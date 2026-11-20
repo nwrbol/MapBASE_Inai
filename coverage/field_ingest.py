@@ -331,3 +331,40 @@ def field_points(field_df: pd.DataFrame, settings: Settings) -> list[dict]:
         }
         for r, cell in zip(field_df.itertuples(index=False), cells)
     ]
+
+
+def build_field_map_data(
+    base_map: dict,
+    base: PipelineResult,
+    withf: PipelineResult,
+    field_df: pd.DataFrame,
+    diff: dict,
+    version: int,
+    by_source: dict[str, int],
+) -> dict:
+    """Данные карты «с полевыми» (тот же формат, что у /api/mapdata) + n_field, field_points, field_diff.
+
+    `result` остаётся официальным (по исходным данным); результат с полевыми лежит отдельно в `field_result`.
+    """
+    from .render import build_map_data
+    from .result import to_jsonable
+
+    data = build_map_data(withf)
+    data["result"] = base_map["result"]
+    data["field_result"] = withf.result
+    counts: dict[str, int] = {}
+    if field_df is not None and len(field_df):
+        cells = assign_cells(field_df[["lat", "lon", "rsrp_dbm"]].astype(float), withf.settings)["cell_id"]
+        counts = cells.value_counts().to_dict()
+    for c in data["cells"]:
+        c["n_field"] = int(counts.get(c["id"], 0))
+    data["field_points"] = field_points(field_df, withf.settings)
+    data["field_diff"] = diff
+    data["meta"] = {
+        **data["meta"],
+        "field_included": True,
+        "field_count": len(field_df),
+        "field_version": int(version),
+        "field_by_source": by_source,
+    }
+    return to_jsonable(data)

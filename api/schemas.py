@@ -130,3 +130,63 @@ class ScenarioResponse(BaseModel):
 class EvaluateResponse(PairOptionOut):
     violates_constraints: bool
     delta_vs_best: int | None = Field(None, description="covered − covered лучшей пары с ограничениями")
+
+
+# --- полевые замеры ---------------------------------------------------------------------------
+
+FieldSource = Literal["map_pin", "gps", "manual", "import"]
+
+
+class FieldItem(BaseModel):
+    lat: float
+    lon: float
+    rsrp_dbm: float
+    timestamp: str = Field(min_length=1, max_length=64, description="ISO 8601; без пояса считается Asia/Bishkek")
+    source: FieldSource = "manual"
+    accuracy_m: float | None = Field(None, ge=0, description="точность GPS, м")
+    device_label: str | None = Field(None, max_length=50)
+
+
+class FieldAddRequest(BaseModel):
+    items: list[FieldItem] = Field(min_length=1, max_length=500)
+    dry_run: bool = False
+
+
+class FieldPasteRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=200_000, description="строки lat,lon,rsrp_dbm,timestamp")
+    source: FieldSource = "manual"
+    has_header: bool | None = Field(None, description="None: определить автоматически")
+    dry_run: bool = False
+
+
+class FieldAccepted(BaseModel):
+    index: int
+    id: str | None = None
+    cell_id: str
+    n_after: int
+    median_after: float
+    class_after: str
+    counted_after: bool
+    became_counted: bool
+    warning: str | None = None
+
+
+class FieldRejected(BaseModel):
+    index: int
+    reason: str
+    message: str
+
+
+class FieldAddResponse(BaseModel):
+    accepted: list[FieldAccepted]
+    rejected: list[FieldRejected]
+    field_version: int
+    dry_run: bool = False
+    batch_id: str | None = None
+    summary: dict[str, int] | None = Field(None, description="cells_changed / became_counted / class_changed")
+    rows: list[dict[str, Any]] | None = Field(None, description="построчный разбор вставленного текста (paste)")
+
+
+class FieldVersion(BaseModel):
+    version: int
+    count: int

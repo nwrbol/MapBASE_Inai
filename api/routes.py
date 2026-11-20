@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from coverage.config import Settings, load_settings
 from coverage.errors import DataValidationError, ScenarioError
+from coverage.field_store import FieldStore
 from coverage.pipeline import Inputs, PipelineResult, run_pipeline
 from coverage.render import build_map_data, render_page
 from coverage.result import dumps, to_jsonable
@@ -59,6 +60,10 @@ class AppState:
     default: Analysis | None = None
     analyses: OrderedDict[str, Analysis] = field(default_factory=OrderedDict)
     lock: Lock = field(default_factory=Lock)
+    # полевые замеры: отдельная БД, пересчёт «с полевыми» кэшируется по версии (см. api/field_routes.py)
+    field_store: FieldStore | None = None
+    field_lock: Lock = field(default_factory=Lock)
+    field_cache: OrderedDict = field(default_factory=OrderedDict)
 
     def store(self, analysis: Analysis) -> str:
         key = uuid.uuid4().hex
@@ -69,9 +74,10 @@ class AppState:
         return key
 
 
-def create_state(data_dir: Path, config_path: Path | None) -> AppState:
+def create_state(data_dir: Path, config_path: Path | None, field_db_path: str | Path | None = None) -> AppState:
     settings = load_settings(config_path)
     state = AppState(data_dir=data_dir, config_path=config_path, settings=settings)
+    state.field_store = FieldStore(field_db_path)
     pr = run_pipeline(Inputs.from_dir(data_dir, settings.bounds.bounds_file), settings)
     state.default = Analysis(pr=pr, map_data=build_map_data(pr))
     return state
@@ -131,8 +137,15 @@ def get_report(request: Request) -> JSONResponse:
 
 
 @router.get("/api/mapdata")
-def get_mapdata(request: Request) -> JSONResponse:
-    """Все данные карты одним JSON (тот же формат, что встроен в map.html)."""
+def get_mapdata(request: Request, include_field: bool = False) -> JSONResponse:
+    """Все данные карты одним JSON (тот же формат, что встроен в map.html).
+
+    include_field=true добавляет полевые замеры в сетку (result остаётся официальным, по исходным данным).
+    """
+    if include_field:
+        from .field_routes import field_map_data
+
+        return JSONResponse(field_map_data(request))
     return JSONResponse(_default(request).map_data)
 
 
