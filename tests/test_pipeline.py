@@ -48,14 +48,16 @@ def test_bounds_from_config_when_file_missing(settings, tmp_path):
 def test_map_html_is_self_contained(settings):
     html = render_map_html(run_pipeline(Inputs.from_dir(SMALL), settings))
     assert "L.map" in html  # leaflet + app.js встроены
-    assert "unpkg.com" not in html and "cdn." not in html
+    # библиотеки встроены: никаких <script src=...> и <link href=...> на CDN (тайлы карты не в счёт)
+    assert '<script src="http' not in html and '<link rel="stylesheet" href="http' not in html
+    assert "unpkg.com" not in html and "cdnjs" not in html and "jsdelivr" not in html
     assert '<script id="data" type="application/json">' in html
 
 
 def test_cli_writes_outputs(tmp_path):
     proc = subprocess.run(
         [sys.executable, str(ROOT / "run.py"), "--data-dir", str(SMALL), "--out", str(tmp_path)],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, encoding="utf-8", check=False,
     )  # fmt: skip
     assert proc.returncode == 0, proc.stderr
     assert "dropped: 6" in proc.stdout
@@ -69,7 +71,7 @@ def test_cli_bad_input_exit_code_2(tmp_path):
     (tmp_path / "candidates.csv").write_text("id,lat,lon\n", encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, str(ROOT / "run.py"), "--data-dir", str(tmp_path), "--out", str(tmp_path)],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, encoding="utf-8", check=False,
     )  # fmt: skip
     assert proc.returncode == 2
     assert "нет обязательных столбцов" in proc.stderr
@@ -79,7 +81,7 @@ def test_cli_bad_input_exit_code_2(tmp_path):
 def test_cli_missing_file_exit_code_2(tmp_path):
     proc = subprocess.run(
         [sys.executable, str(ROOT / "run.py"), "--data-dir", str(tmp_path / "nope"), "--out", str(tmp_path)],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, encoding="utf-8", check=False,
     )  # fmt: skip
     assert proc.returncode == 2
     assert "не найден" in proc.stderr

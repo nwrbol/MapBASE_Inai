@@ -22,7 +22,7 @@
     "dropped_rows": 200,
     "covered_weak_cells": 111
   },
-  "bounds_source": "/home/user/MapBASE_Inai/data/bounds.json",
+  "bounds_source": "C:\\Users\\ThinkPad P1\\Desktop\\MapBASE_Inai\\data\\bounds.json",
   "cleaning": {
     "total": 5000,
     "kept": 4800,
@@ -78,7 +78,7 @@
   "candidates": [
     {
       "id": "C01",
-      "lat": 42.84089932160592,
+      "lat": 42.840899321605924,
       "lon": 74.56122647807555,
       "admissible": false,
       "nearest_tower": "B01",
@@ -111,7 +111,7 @@
     },
     {
       "id": "C04",
-      "lat": 42.84089932160592,
+      "lat": 42.840899321605924,
       "lon": 74.60783264494628,
       "admissible": false,
       "nearest_tower": "B02",
@@ -155,7 +155,7 @@
     },
     {
       "id": "C08",
-      "lat": 42.85528846730063,
+      "lat": 42.855288467300625,
       "lon": 74.57839717113319,
       "admissible": true,
       "nearest_tower": "B01",
@@ -243,7 +243,7 @@
     },
     {
       "id": "C16",
-      "lat": 42.85888575372429,
+      "lat": 42.858885753724294,
       "lon": 74.58575603958647,
       "admissible": true,
       "nearest_tower": "B04",
@@ -276,7 +276,7 @@
     },
     {
       "id": "C19",
-      "lat": 42.8444966080296,
+      "lat": 42.844496608029594,
       "lon": 74.58452956151092,
       "admissible": true,
       "nearest_tower": "B01",
@@ -419,7 +419,7 @@
         "X018_Y011"
       ],
       "depth_db": 519.1,
-      "elapsed_ms": 0.547,
+      "elapsed_ms": 0.935,
       "pairs_evaluated": 120,
       "ties": [
         [
@@ -547,7 +547,7 @@
         "X015_Y010"
       ],
       "depth_db": 619.15,
-      "elapsed_ms": 0.065,
+      "elapsed_ms": 0.062,
       "pairs_evaluated": 31,
       "ties": [],
       "steps": [
@@ -794,11 +794,11 @@
     }
   },
   "timings_ms": {
-    "read": 14.935,
-    "cleaning": 37.988,
-    "grid": 12.128,
-    "selection": 2.725,
-    "daynight": 11.756,
-    "total": 83.99
+    "read": 12.944,
+    "cleaning": 48.547,
+    "grid": 10.004,
+    "selection": 2.711,
+    "daynight": 10.773,
+    "total": 91.379
   }
 }

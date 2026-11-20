@@ -26,11 +26,36 @@
 
   function initMap() {
     map = L.map("map", { preferCanvas: true, zoomControl: true });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
+    const osmAttr = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    if (!SERVER) {
+      // Тайлы OSM блокируют запросы без Referer (map.html, открытый двойным кликом),
+      // поэтому в автономной карте берём подложку Esri World Street Map: она без ключа и работает с file://.
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19,
+        attribution: "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, " + osmAttr,
+      }).addTo(map);
+    } else {
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: osmAttr }).addTo(map);
+    }
     L.control.scale({ imperial: false }).addTo(map);
+    // Пока контейнер карты имеет нулевой размер (вёрстка ещё не готова, вкладка в фоне),
+    // fitBounds уходит в максимальный зум. Поэтому подгоняем вид, когда размер появится.
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => {
+        map.invalidateSize();
+        if (!fitted) tryFit();
+      }).observe(map.getContainer());
+    }
+  }
+
+  let fitTarget = null; // границы района для начального вида
+  let fitted = false;
+
+  function tryFit() {
+    const size = map.getSize();
+    if (!fitTarget || size.x === 0 || size.y === 0) return;
+    map.fitBounds(fitTarget, { padding: [10, 10] });
+    fitted = true;
   }
 
   function rect(b, style) {
@@ -164,7 +189,9 @@
     legend.addTo(map);
 
     const b = m.bounds;
-    map.fitBounds([[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]], { padding: [10, 10] });
+    fitTarget = [[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]];
+    fitted = false;
+    tryFit();
     L.rectangle([[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]], { color: "#111", weight: 1, dashArray: "4 4", fill: false, interactive: false }).addTo(grid);
   }
 
