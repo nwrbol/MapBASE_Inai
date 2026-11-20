@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from coverage import __version__
 from coverage.errors import ConfigError, DataValidationError
+from coverage.field_import import ImportTooLarge
 from coverage.render import STATIC
 
 from .field_routes import page_router as field_page_router
@@ -50,6 +51,10 @@ def create_app(
     @app.exception_handler(DataValidationError)
     async def _data_error(_: Request, exc: DataValidationError) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @app.exception_handler(ImportTooLarge)
+    async def _too_large(_: Request, exc: ImportTooLarge) -> JSONResponse:
+        return JSONResponse(status_code=413, content={"detail": str(exc)})
 
     @app.exception_handler(ConfigError)
     async def _config_error(_: Request, exc: ConfigError) -> JSONResponse:

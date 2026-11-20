@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from coverage.errors import DataValidationError
+from coverage.field_import import ImportOptions, ImportTooLarge, analyze, preview_response, require_complete
 from coverage.field_ingest import (
     FIELD_COLS,
     NormRow,
@@ -344,3 +347,78 @@ def get_field_config(request: Request) -> JSONResponse:
             }
         )
     )
+
+
+# --- импорт CSV из инженерных приложений ----------------------------------------------------------------
+
+
+def _options(raw: str | None) -> ImportOptions:
+    if not raw or not raw.strip():
+        return ImportOptions()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise DataValidationError(f"options: некорректный JSON ({exc})") from exc
+    if not isinstance(data, dict):
+        raise DataValidationError("options: ожидается JSON-объект")
+    return ImportOptions.from_json(data)
+
+
+async def _read_import(file: UploadFile, st: AppState) -> bytes:
+    limit = st.settings.field_data.import_max_bytes
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise ImportTooLarge(f"файл больше {limit // (1024 * 1024)} МБ")
+    if not data:
+        raise DataValidationError("файл пустой")
+    return data
+
+
+@router.post("/import/preview", tags=["field-import"])
+async def import_preview(
+    request: Request, file: UploadFile = File(...), options: str | None = Form(None)
+) -> JSONResponse:
+    """Шаг 1: разбор файла и проверка всех строк БЕЗ записи. Состояния нет: на шаге 2 файл передаётся повторно."""
+    st = _state(request)
+    a_ = _default(request)
+    opts = _options(options)
+    data = await _read_import(file, st)
+    with st.field_lock:
+        ex = existing_frame(a_.pr.clean, st.field_store.as_dataframe())
+    analysis = await run_in_threadpool(analyze, data, opts, a_.pr.settings, ex)
+    return JSONResponse(to_jsonable(preview_response(analysis, a_.pr.settings)))
+
+
+@router.post("/import/commit", tags=["field-import"])
+async def import_commit(
+    request: Request,
+    file: UploadFile = File(...),
+    options: str | None = Form(None),
+    confirm_units: bool = Form(False),
+) -> JSONResponse:
+    """Шаг 2: сохранение под одним batch_id (его можно отменить целиком через DELETE /batches/{id})."""
+    st = _state(request)
+    a_ = _default(request)
+    opts = _options(options)
+    data = await _read_import(file, st)
+
+    def work() -> dict:
+        with st.field_lock:
+            ex = existing_frame(a_.pr.clean, st.field_store.as_dataframe())
+            analysis = analyze(data, opts, a_.pr.settings, ex)
+            require_complete(analysis, confirm_units)
+            batch_id = uuid.uuid4().hex
+            st.field_store.add_many([x.to_store(batch_id) for x in analysis.accepted])
+            view = _view(st)
+            return {
+                "batch_id": batch_id,
+                "accepted": len(analysis.accepted),
+                "rejected_by_reason": analysis.rejected_counts,
+                "filtered_tech": len(analysis.filtered),
+                "field_diff": view.diff,
+                "field_version": view.version,
+            }
+
+    result = await run_in_threadpool(work)
+    log.info("Импорт сохранён: принято %d", result["accepted"])
+    return JSONResponse(to_jsonable(result))
