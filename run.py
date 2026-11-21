@@ -59,6 +59,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="DB",
         help="дополнительно посчитать карту с полевыми замерами из SQLite (map_with_field.html, field_report.json); result.json не меняется",
     )
+    p.add_argument(
+        "--check",
+        nargs="?",
+        const="",
+        metavar="EXPECTED",
+        help="сверить результат с эталоном (по умолчанию <data-dir>/expected.json): пара точно, dropped_rows ±5%%, "
+        "минимум 2 из 3 худших клеток; печатает PASS или FAIL (код выхода 1 при FAIL)",
+    )
     p.add_argument("--no-map", action="store_true", help="не генерировать map.html")
     p.add_argument("--serve", action="store_true", help="после расчёта запустить веб-интерфейс FastAPI")
     p.add_argument("--host", default="127.0.0.1")
@@ -137,6 +145,24 @@ def build_constraints(args: argparse.Namespace) -> Constraints:
         Refusal(r.id, reasons.get(r.id, r.reason), categories.get(r.id, r.category)) for r in merged.excluded
     )
     return Constraints(excluded=patched, required=merged.required)
+
+
+def _cell_ids(worst: list) -> list[str]:
+    return [str(w["cell_id"]) if isinstance(w, dict) else str(w) for w in worst]
+
+
+def check_against_expected(result: dict, expected: dict) -> list[str]:
+    """Проверки сверки с эталоном; пустой список означает PASS."""
+    problems = []
+    if sorted(result["best_candidates"]) != sorted(expected["best_candidates"]):
+        problems.append(f"пара {result['best_candidates']} != {expected['best_candidates']}")
+    exp_dropped = expected["dropped_rows"]
+    if abs(result["dropped_rows"] - exp_dropped) > 0.05 * exp_dropped:
+        problems.append(f"dropped_rows {result['dropped_rows']} вне ±5% от {exp_dropped}")
+    common = set(_cell_ids(result["worst_cells"])) & set(_cell_ids(expected["worst_cells"]))
+    if len(common) < 2:
+        problems.append(f"совпало худших клеток: {len(common)} из 3 (нужно не меньше 2)")
+    return problems
 
 
 def selected_summary(pr: PipelineResult, selected: dict, filename: str) -> str:
@@ -269,6 +295,16 @@ def main(argv: list[str] | None = None) -> int:
             print(selected_summary(pr, selected, o.selected_file))
         if field_lines:
             print("\n".join(field_lines))
+        if args.check is not None:
+            import json as _json
+
+            exp_path = Path(args.check) if args.check else Path(args.data_dir) / "expected.json"
+            if not exp_path.exists():
+                raise DataValidationError(f"--check: файл эталона не найден: {exp_path}")
+            problems = check_against_expected(pr.result, _json.loads(exp_path.read_text(encoding="utf-8")))
+            print("Check vs expected: " + ("PASS" if not problems else "FAIL: " + "; ".join(problems)))
+            if problems:
+                return 1
         if pair_error is not None:
             print(f"Ошибка входных данных: --pair: {pair_error}", file=sys.stderr)
             return 2

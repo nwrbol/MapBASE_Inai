@@ -195,3 +195,12 @@ def test_js_selected_result_matches_python(pr, tmp_path):
     assert out.returncode == 0, out.stderr
     for got, pair in zip(json.loads(out.stdout), [("C08", "C11"), ("C14", "C09"), ("C08", "C14")]):
         assert got == build_selected_result(pr, pair)
+
+
+def test_cli_check_pass_and_fail(tmp_path):
+    ok = run_cli(tmp_path, "--check")
+    assert ok.returncode == 0 and "Check vs expected: PASS" in ok.stdout
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({**EXPECTED, "best_candidates": ["C01", "C02"], "dropped_rows": 100}), encoding="utf-8")
+    r = run_cli(tmp_path, "--check", str(bad))
+    assert r.returncode == 1 and "FAIL" in r.stdout and "dropped_rows" in r.stdout
