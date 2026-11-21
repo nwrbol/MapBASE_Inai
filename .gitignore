@@ -19,3 +19,9 @@ result_selected.json
 scenario.json
 
 .env
+
+# инструменты разработки и локальные артефакты
+CLAUDE.md
+.claude/
+.coverage
+htmlcov/

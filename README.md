@@ -349,7 +349,6 @@ SELF-CHECK PASSED
 
 `requirements.txt` задаёт совместимые диапазоны (проверено на Python 3.10 с pandas 2.3 / numpy 2.2 и на Python 3.13 с pandas 3.0 / numpy 2.5). Точные версии прогона — в `requirements-lock.txt`. Тяжёлых гео-библиотек нет: Leaflet подключён напрямую из `web/static/vendor/`.
 
-Сценарий демонстрации и ответы на вопросы: [`docs/DEMO.md`](docs/DEMO.md).
 
 ## ИИ-ассистент
 
