@@ -10,5 +10,5 @@ const block = src.slice(src.indexOf("getState() {"), src.indexOf("openTab(tab)")
 
 test("getState отправляет все ключи примера", () => {
   const keys = [...Object.keys(example), ...Object.keys(example.plan)];
-  for (const k of keys) assert.ok(new RegExp(`\b${k}\b`).test(block), `в getState нет ключа ${k}`);
+  for (const k of keys) assert.ok(new RegExp(`\\b${k}\\b`).test(block), `в getState нет ключа ${k}`);
 });
